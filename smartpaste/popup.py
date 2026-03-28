@@ -77,7 +77,7 @@ def _init_colors():
 # Format icons (emoji — lightweight, no SF Symbols dependency)
 FORMAT_ICONS: dict[TargetFormat, str] = {
     TargetFormat.GOOGLE_DOCS: "\U0001F4DD",   # memo
-    TargetFormat.GMAIL: "\U00002709",          # envelope
+    TargetFormat.GMAIL: "\U0001F4E8",          # incoming envelope (colorful)
     TargetFormat.SLACK: "\U0001F4AC",          # speech bubble
     TargetFormat.NOTION: "\U0001F4D3",         # notebook
     TargetFormat.CLI: "\U0001F4BB",             # laptop (terminal)
