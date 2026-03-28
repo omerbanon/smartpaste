@@ -1,116 +1,92 @@
-"""Markdown → Slack mrkdwn converter.
+"""Markdown → Slack HTML converter.
 
-Slack uses its own 'mrkdwn' syntax which differs from standard Markdown:
-- Bold: *text* (not **text**)
-- Italic: _text_ (same)
-- Strikethrough: ~text~ (not ~~text~~)
-- Code: `text` (same) and ```text``` (same)
-- Links: <url|text> (not [text](url))
-- Headings → bold text (Slack has no heading syntax in messages)
-- Blockquote: > text (same)
-- Lists: Slack renders plain-text bullets/numbers
+Slack's WYSIWYG composer reads HTML from the clipboard (public.html) and
+converts it to rich text: <strong> → bold, <em> → italic, <ul>/<ol> → lists,
+<pre><code> → code blocks, <blockquote> → quotes, <a> → links.
 
-The converter stashes code blocks/inline code first to protect them,
-then uses placeholders for bold so it doesn't collide with italic conversion.
+Slack does NOT support: tables, headings (converted to bold), or <style> blocks.
+We generate clean, minimal HTML optimized for Slack's parser.
 """
 
 import re
 
+import markdown as md
+
 from smartpaste.constants import ContentType, TargetFormat
 from smartpaste.converters import register
 
-# Null-byte delimited placeholders (won't appear in normal text)
-_CB = "\x00CB"    # code block
-_IC = "\x00IC"    # inline code
-_SB = "\x00SB"    # slack bold start
-_SE = "\x00SE"    # slack bold end
-_BI_S = "\x00BS"  # bold-italic start
-_BI_E = "\x00BE"  # bold-italic end
+# Extensions — no codehilite (Slack ignores inline styles), no smarty
+_MD_EXTENSIONS = [
+    "fenced_code",
+    "sane_lists",
+    "nl2br",
+    "pymdownx.tilde",  # ~~strikethrough~~ → <del>
+]
 
 
-def _convert_md_to_mrkdwn(text: str) -> str:
-    """Transform standard Markdown into Slack mrkdwn."""
-    result = text
+def _md_to_slack_html(text: str) -> str:
+    """Convert markdown to clean HTML that Slack's composer understands."""
+    # Pre-process: convert markdown tables to plain text (Slack has no table support)
+    text = _tables_to_text(text)
 
-    # --- Phase 1: Stash code (protect from formatting changes) ---
-    code_blocks: list[str] = []
-    inline_codes: list[str] = []
+    html = md.markdown(text, extensions=_MD_EXTENSIONS)
 
-    def _stash_block(m: re.Match) -> str:
-        code_blocks.append(m.group(0))
-        return f"{_CB}{len(code_blocks) - 1}\x00"
+    # Post-process: convert headings to bold paragraphs (Slack has no headings)
+    html = re.sub(r"<h[1-6]>(.*?)</h[1-6]>", r"<p><strong>\1</strong></p>", html)
 
-    def _stash_inline(m: re.Match) -> str:
-        inline_codes.append(m.group(0))
-        return f"{_IC}{len(inline_codes) - 1}\x00"
+    # Remove any horizontal rules (Slack ignores them)
+    html = re.sub(r"<hr\s*/?>", "", html)
 
-    result = re.sub(r"```[\s\S]*?```", _stash_block, result)
-    result = re.sub(r"`[^`\n]+`", _stash_inline, result)
+    return html
 
-    # --- Phase 2: Images (before links — ![alt](url) starts with !) ---
-    result = re.sub(r"!\[([^\]]*)\]\(([^)]+)\)", r"<\2|\1>", result)
 
-    # --- Phase 3: Links [text](url) → <url|text> ---
-    result = re.sub(r"\[([^\]]+)\]\(([^)]+)\)", r"<\2|\1>", result)
+def _tables_to_text(text: str) -> str:
+    """Convert markdown tables to plain-text representation before HTML conversion."""
+    def _convert_table(m: re.Match) -> str:
+        block = m.group(0).strip()
+        lines = block.split("\n")
+        rows = []
+        for line in lines:
+            if re.match(r"^\|[\s\-:|]+\|$", line):
+                continue
+            cells = [c.strip() for c in line.strip("|").split("|")]
+            cells = [c for c in cells if c]
+            if cells:
+                rows.append(cells)
+        if not rows:
+            return ""
+        # Format as "key: value" for 2-col, comma-join for 3+
+        headers = rows[0]
+        data = rows[1:]
+        if not data:
+            return ", ".join(headers)
+        result = []
+        for row in data:
+            result.append(", ".join(row))
+        return "\n".join(result)
 
-    # --- Phase 4: Bold+Italic ***text*** → placeholder (restore as *_text_* later) ---
-    result = re.sub(r"\*\*\*([^*]+?)\*\*\*", rf"{_BI_S}\1{_BI_E}", result)
-
-    # --- Phase 5: Bold **text** / __text__ → placeholder (restore as *text* later) ---
-    result = re.sub(r"\*\*([^*\n]+?)\*\*", rf"{_SB}\1{_SE}", result)
-    result = re.sub(r"__([^_\n]+?)__", rf"{_SB}\1{_SE}", result)
-
-    # --- Phase 6: Italic *text* → _text_ (Slack italic) ---
-    # Now safe because all bold ** are already replaced with placeholders
-    result = re.sub(r"(?<!\*)\*([^*\n]+?)\*(?!\*)", r"_\1_", result)
-
-    # --- Phase 7: Restore bold placeholders → *text* (Slack bold) ---
-    result = result.replace(_SB, "*").replace(_SE, "*")
-    result = result.replace(_BI_S, "*_").replace(_BI_E, "_*")
-
-    # --- Phase 8: Strikethrough ~~text~~ → ~text~ ---
-    result = re.sub(r"~~([^~\n]+?)~~", r"~\1~", result)
-
-    # --- Phase 9: Headings → bold text ---
-    result = re.sub(r"^#{1,6}\s+(.+)$", r"*\1*", result, flags=re.MULTILINE)
-
-    # --- Phase 10: Horizontal rules ---
-    result = re.sub(r"^[-*_]{3,}\s*$", "---", result, flags=re.MULTILINE)
-
-    # --- Phase 11: Tables → code block (Slack has no table support) ---
-    def _table_to_code(m: re.Match) -> str:
-        table_text = m.group(0).strip()
-        lines = table_text.split("\n")
-        # Remove separator rows (|---|---|)
-        clean_lines = [l for l in lines if not re.match(r"^\|[\s\-:|]+\|$", l)]
-        return "```\n" + "\n".join(clean_lines) + "\n```"
-
-    result = re.sub(
+    return re.sub(
         r"(?:^\|.+\|[ \t]*\n)+",
-        _table_to_code,
-        result,
+        _convert_table,
+        text,
         flags=re.MULTILINE,
     )
 
-    # --- Phase 12: Blockquotes — clean up nested >> → > ---
-    result = re.sub(r"^>+\s*", "> ", result, flags=re.MULTILINE)
 
-    # --- Phase 13: Restore stashed code ---
-    for i, block in enumerate(code_blocks):
-        cleaned = re.sub(r"^```\w*\n?", "```\n", block, count=1)
-        result = result.replace(f"{_CB}{i}\x00", cleaned)
-
-    for i, code in enumerate(inline_codes):
-        result = result.replace(f"{_IC}{i}\x00", code)
-
-    # --- Phase 14: Clean up extra blank lines ---
-    result = re.sub(r"\n{3,}", "\n\n", result)
-
-    return result.strip()
+def _strip_tags(html: str) -> str:
+    """Strip HTML tags for plain-text fallback."""
+    clean = re.sub(r"<[^>]+>", "", html)
+    clean = re.sub(r"\n{3,}", "\n\n", clean)
+    return clean.strip()
 
 
 @register(ContentType.MARKDOWN, TargetFormat.SLACK)
 def md_to_slack(text: str) -> dict[str, str | None]:
-    """Convert markdown to Slack mrkdwn. Written as plain text (Slack parses it)."""
-    mrkdwn = _convert_md_to_mrkdwn(text)
-    return {"html": None, "plain": mrkdwn}
+    """Convert markdown to HTML for Slack's WYSIWYG composer.
+
+    Slack reads public.html from the clipboard and converts:
+    <strong> → bold, <em> → italic, <ul>/<ol> → lists,
+    <pre><code> → code blocks, <a> → links, <blockquote> → quotes.
+    """
+    html = _md_to_slack_html(text)
+    return {"html": html, "plain": _strip_tags(html)}

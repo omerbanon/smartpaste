@@ -13,6 +13,7 @@ _MD_EXTENSIONS = [
     "nl2br",
     "sane_lists",
     "smarty",
+    "pymdownx.tilde",  # ~~strikethrough~~ → <del>
 ]
 
 _MD_EXTENSION_CONFIGS = {
