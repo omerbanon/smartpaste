@@ -21,6 +21,7 @@ from AppKit import (
     NSFontWeightRegular,
     NSFontWeightSemibold,
     NSMakeRect,
+    NSNonactivatingPanelMask,
     NSPanel,
     NSScreen,
     NSTextField,
@@ -32,7 +33,7 @@ from AppKit import (
     NSVisualEffectView,
     NSWindowStyleMaskBorderless,
 )
-from AppKit import NSAppearance
+from AppKit import NSAppearance, NSCenterTextAlignment, NSTimer
 from Foundation import NSObject
 
 from smartpaste.constants import ContentType, TargetFormat, FORMAT_OPTIONS, CONTENT_TYPE_LABELS
@@ -429,8 +430,8 @@ class FormatPopup:
             self._on_button_click(self._selected_index)
             return None
 
-        # Number keys 1-5 for quick pick (keycodes 18-23 map to 1-6)
-        number_keycodes = {18: 0, 19: 1, 20: 2, 21: 3, 23: 4}  # 1,2,3,4,5
+        # Number keys 1-6 for quick pick (keycodes 18-23 map to 1-6)
+        number_keycodes = {18: 0, 19: 1, 20: 2, 21: 3, 23: 4, 22: 5}  # 1,2,3,4,5,6
         if keycode in number_keycodes:
             idx = number_keycodes[keycode]
             if idx < len(self._formats):
@@ -454,3 +455,126 @@ class FormatPopup:
             self._buttons[old].setSelected_(False)
             self._buttons[new].setSelected_(True)
             self._selected_index = new
+
+
+# Toast icon constants
+TOAST_ICON_SUCCESS = "\u2705"  # checkmark
+TOAST_ICON_WARNING = "\u26A0\uFE0F"   # warning
+TOAST_ICON_INFO = "\u2139\uFE0F"      # info
+
+TOAST_WIDTH = 300
+TOAST_HEIGHT = 40
+
+
+class Toast:
+    """Lightweight in-app toast notification — floating pill that auto-dismisses."""
+
+    def __init__(self):
+        self._panel: NSPanel | None = None
+        self._timer = None
+
+    def show(self, message: str, icon: str = TOAST_ICON_INFO, duration: float = 1.5) -> None:
+        """Show a brief toast message, auto-dismisses after duration seconds."""
+        _init_colors()
+        self._dismiss_immediate()
+
+        screen = NSScreen.mainScreen()
+        sf = screen.frame()
+        x = sf.origin.x + (sf.size.width - TOAST_WIDTH) / 2
+        y = sf.origin.y + sf.size.height * 0.55
+
+        frame = NSMakeRect(x, y, TOAST_WIDTH, TOAST_HEIGHT)
+
+        panel = NSPanel.alloc().initWithContentRect_styleMask_backing_defer_(
+            frame,
+            NSWindowStyleMaskBorderless | NSNonactivatingPanelMask,
+            NSBackingStoreBuffered,
+            False,
+        )
+        panel.setLevel_(NSFloatingWindowLevel + 2)
+        panel.setOpaque_(False)
+        panel.setBackgroundColor_(NSColor.clearColor())
+        panel.setHasShadow_(True)
+        panel.setMovableByWindowBackground_(False)
+        panel.setIgnoresMouseEvents_(True)
+        panel.setHidesOnDeactivate_(False)  # stay visible even when app deactivates
+        panel.setCollectionBehavior_(1 << 0 | 1 << 3)  # canJoinAllSpaces | transient
+
+        dark = NSAppearance.appearanceNamed_("NSAppearanceNameVibrantDark")
+        panel.setAppearance_(dark)
+
+        # Blur background pill
+        blur = NSVisualEffectView.alloc().initWithFrame_(
+            NSMakeRect(0, 0, TOAST_WIDTH, TOAST_HEIGHT)
+        )
+        blur.setMaterial_(9)  # HUDWindow
+        blur.setBlendingMode_(0)
+        blur.setState_(1)
+        blur.setWantsLayer_(True)
+        blur.layer().setCornerRadius_(TOAST_HEIGHT / 2)
+        blur.layer().setMasksToBounds_(True)
+        panel.contentView().addSubview_(blur)
+
+        # Icon
+        icon_field = NSTextField.alloc().initWithFrame_(
+            NSMakeRect(14, (TOAST_HEIGHT - 20) / 2, 24, 20)
+        )
+        icon_field.setStringValue_(icon)
+        icon_field.setBezeled_(False)
+        icon_field.setDrawsBackground_(False)
+        icon_field.setEditable_(False)
+        icon_field.setSelectable_(False)
+        icon_field.setFont_(NSFont.systemFontOfSize_(14))
+        blur.addSubview_(icon_field)
+
+        # Message
+        msg_field = NSTextField.alloc().initWithFrame_(
+            NSMakeRect(42, (TOAST_HEIGHT - 18) / 2, TOAST_WIDTH - 56, 18)
+        )
+        msg_field.setStringValue_(message)
+        msg_field.setBezeled_(False)
+        msg_field.setDrawsBackground_(False)
+        msg_field.setEditable_(False)
+        msg_field.setSelectable_(False)
+        msg_field.setFont_(NSFont.systemFontOfSize_weight_(13, NSFontWeightMedium))
+        msg_field.setTextColor_(NSColor.colorWithWhite_alpha_(1.0, 0.88))
+        blur.addSubview_(msg_field)
+
+        self._panel = panel
+
+        # Unhide the app so the panel can appear (NSApp.hide_ may have run)
+        NSApplication.sharedApplication().unhide_(None)
+
+        # Fade in
+        panel.setAlphaValue_(0.0)
+        panel.orderFrontRegardless()
+        NSAnimationContext.beginGrouping()
+        NSAnimationContext.currentContext().setDuration_(0.15)
+        panel.animator().setAlphaValue_(1.0)
+        NSAnimationContext.endGrouping()
+
+        # Schedule auto-dismiss
+        self._timer = NSTimer.scheduledTimerWithTimeInterval_repeats_block_(
+            duration, False, lambda _: self._fade_out()
+        )
+
+    def _fade_out(self) -> None:
+        """Fade out and remove the toast."""
+        if self._panel:
+            NSAnimationContext.beginGrouping()
+            ctx = NSAnimationContext.currentContext()
+            ctx.setDuration_(0.3)
+            ctx.setCompletionHandler_(lambda: self._dismiss_immediate())
+            self._panel.animator().setAlphaValue_(0.0)
+            NSAnimationContext.endGrouping()
+
+    def _dismiss_immediate(self) -> None:
+        """Remove toast immediately."""
+        if self._timer:
+            self._timer.invalidate()
+            self._timer = None
+        if self._panel:
+            self._panel.orderOut_(None)
+            self._panel = None
+            # Re-hide the app so focus stays with the previous app
+            NSApplication.sharedApplication().hide_(None)

@@ -17,7 +17,7 @@ from smartpaste.constants import ContentType, TargetFormat
 from smartpaste.converters import convert
 from smartpaste.detector import detect
 from smartpaste.hotkey import register_hotkey
-from smartpaste.popup import FormatPopup
+from smartpaste.popup import FormatPopup, Toast, TOAST_ICON_SUCCESS, TOAST_ICON_WARNING, TOAST_ICON_INFO
 
 logging.basicConfig(
     level=logging.DEBUG,
@@ -37,6 +37,7 @@ class SmartPasteApp(rumps.App):
             quit_button="Quit SmartPaste",
         )
         self._popup = FormatPopup()
+        self._toast = Toast()
 
         # Menu items
         self.menu = [
@@ -57,11 +58,7 @@ class SmartPasteApp(rumps.App):
         text = read_clipboard_string()
         if not text:
             log.info("Clipboard is empty or has no text, ignoring")
-            rumps.notification(
-                title="SmartPaste",
-                subtitle="",
-                message="No text on clipboard.",
-            )
+            self._toast.show("No text on clipboard", icon=TOAST_ICON_WARNING)
             return
 
         content_type = detect(text)
@@ -69,11 +66,7 @@ class SmartPasteApp(rumps.App):
 
         if content_type == ContentType.PLAIN_TEXT:
             log.info("Plain text detected, nothing to convert")
-            rumps.notification(
-                title="SmartPaste",
-                subtitle="",
-                message="Plain text — no conversion needed.",
-            )
+            self._toast.show("Plain text — no conversion needed", icon=TOAST_ICON_INFO)
             return
 
         self._popup.show(
@@ -90,11 +83,7 @@ class SmartPasteApp(rumps.App):
         write_clipboard(html=result.get("html"), plain=result.get("plain"))
 
         log.info("Clipboard updated. Ready to paste.")
-        rumps.notification(
-            title="SmartPaste",
-            subtitle=f"Converted to {target_format.value}",
-            message="Press Cmd+V to paste.",
-        )
+        self._toast.show(f"Converted to {target_format.value} — Cmd+V to paste", icon=TOAST_ICON_SUCCESS)
 
 
 def main():
