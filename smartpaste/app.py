@@ -8,9 +8,12 @@ for global hotkey capture.
 
 import logging
 import sys
+import threading
 
 import rumps
 from AppKit import NSApplication
+from Foundation import NSObject
+from PyObjCTools.AppHelper import callAfter
 
 from smartpaste.clipboard import read_clipboard_string, write_clipboard
 from smartpaste.constants import ContentType, TargetFormat
@@ -38,6 +41,7 @@ class SmartPasteApp(rumps.App):
         )
         self._popup = FormatPopup()
         self._toast = Toast()
+        self._ai_generation = 0  # cancellation counter for in-flight AI requests
 
         # Menu items
         self.menu = [
@@ -64,15 +68,12 @@ class SmartPasteApp(rumps.App):
         content_type = detect(text)
         log.info("Detected content type: %s", content_type)
 
-        if content_type == ContentType.PLAIN_TEXT:
-            log.info("Plain text detected, nothing to convert")
-            self._toast.show("Plain text — no conversion needed", icon=TOAST_ICON_INFO)
-            return
-
         self._popup.show(
             content_type,
             on_select=lambda fmt: self._on_format_selected(text, content_type, fmt),
+            on_ai_select=lambda prompt: self._on_ai_rephrase(text, prompt),
             char_count=len(text),
+            clipboard_text=text,
         )
 
     def _on_format_selected(self, text: str, content_type: ContentType, target_format: TargetFormat) -> None:
@@ -84,6 +85,59 @@ class SmartPasteApp(rumps.App):
 
         log.info("Clipboard updated. Ready to paste.")
         self._toast.show(f"Converted to {target_format.value} — Cmd+V to paste", icon=TOAST_ICON_SUCCESS)
+
+    def _on_ai_rephrase(self, text: str, prompt: str) -> None:
+        """Called when user submits an AI rephrase prompt from the popup."""
+        from smartpaste.ai_rephrase import get_api_key
+
+        if not get_api_key():
+            self._popup.dismiss()
+            self._toast.show("API key not found — add to .env", icon=TOAST_ICON_WARNING)
+            return
+
+        # Show loading state in popup
+        self._popup.show_loading()
+
+        # Increment generation counter (used for cancellation)
+        self._ai_generation += 1
+        generation = self._ai_generation
+
+        def _worker():
+            try:
+                from smartpaste.ai_rephrase import rephrase
+                result = rephrase(prompt, text)
+                callAfter(self._on_ai_complete, generation, result, None)
+            except Exception as exc:
+                log.exception("AI rephrase failed")
+                callAfter(self._on_ai_complete, generation, None, exc)
+
+        thread = threading.Thread(target=_worker, daemon=True)
+        thread.start()
+
+    def _on_ai_complete(self, generation: int, result: str | None, error: Exception | None) -> None:
+        """Handle AI rephrase completion on the main thread."""
+        # Ignore stale results (user pressed Esc during loading, or new request started)
+        if generation != self._ai_generation:
+            log.info("AI result discarded (generation %d, current %d)", generation, self._ai_generation)
+            return
+
+        # If popup was already dismissed (user pressed Esc), discard result
+        if self._popup._panel is None:
+            log.info("AI result discarded — popup was dismissed")
+            return
+
+        self._popup.dismiss()
+
+        if error:
+            msg = str(error)
+            if len(msg) > 60:
+                msg = msg[:57] + "..."
+            self._toast.show(f"AI error: {msg}", icon=TOAST_ICON_WARNING, duration=3.0)
+            return
+
+        # Show result in the preview panel — need to re-activate since dismiss() hid the app
+        NSApplication.sharedApplication().activateIgnoringOtherApps_(True)
+        self._popup._preview.show(result)
 
 
 def main():

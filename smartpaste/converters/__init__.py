@@ -39,5 +39,6 @@ def convert(content_type: ContentType, target_format: TargetFormat, text: str) -
 # Import converter modules so their @register decorators execute.
 import smartpaste.converters.md_to_html  # noqa: E402, F401
 import smartpaste.converters.md_to_slack  # noqa: E402, F401
-import smartpaste.converters.md_to_notion  # noqa: E402, F401
 import smartpaste.converters.to_cli  # noqa: E402, F401
+import smartpaste.converters.table_to_formats  # noqa: E402, F401
+import smartpaste.converters.terminal_clean  # noqa: E402, F401

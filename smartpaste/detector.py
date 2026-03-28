@@ -4,6 +4,51 @@ import re
 
 from smartpaste.constants import ContentType
 
+# Tab-separated values detection (Google Sheets, Excel copy)
+_TAB_RE = re.compile(r"\t")
+
+
+def _is_terminal(text: str) -> bool:
+    """Detect text copied from a terminal emulator.
+
+    Terminal copies have distinctive artifacts:
+    - Lines padded with trailing whitespace to the terminal column width
+    - Many lines at roughly the same length
+    - Soft-wrapped lines (long text broken at terminal width)
+    """
+    lines = text.split("\n")
+    non_empty = [l for l in lines if l.strip()]
+    if len(non_empty) < 2:
+        return False
+
+    # Count lines with significant trailing whitespace (10+ spaces)
+    trailing_padded = sum(
+        1 for l in non_empty
+        if len(l) > len(l.rstrip()) and len(l) - len(l.rstrip()) > 10
+    )
+
+    # If >30% of non-empty lines have heavy trailing padding → terminal
+    ratio = trailing_padded / len(non_empty)
+    return ratio > 0.3
+
+
+def _is_tsv(text: str) -> bool:
+    """Detect tab-separated tabular data (copied from spreadsheets).
+
+    Heuristic: at least 2 rows with tabs, and consistent column count.
+    """
+    lines = [l for l in text.strip().splitlines() if l.strip()]
+    if len(lines) < 2:
+        return False
+    tab_counts = [l.count("\t") for l in lines]
+    # Every line must have at least one tab
+    if any(c == 0 for c in tab_counts):
+        return False
+    # Column count should be consistent (allow ±1 for trailing tabs)
+    median = sorted(tab_counts)[len(tab_counts) // 2]
+    return all(abs(c - median) <= 1 for c in tab_counts)
+
+
 # Markdown signals — each pattern, if found, adds 1 to the score.
 _MD_PATTERNS: list[re.Pattern[str]] = [
     re.compile(r"^#{1,6}\s+\S", re.MULTILINE),           # headings
@@ -48,6 +93,14 @@ def detect(text: str) -> ContentType:
     """
     if not text or not text.strip():
         return ContentType.PLAIN_TEXT
+
+    # Terminal text — padded lines with trailing whitespace
+    if _is_terminal(text):
+        return ContentType.TERMINAL
+
+    # TSV — spreadsheet data copied from Google Sheets / Excel
+    if _is_tsv(text):
+        return ContentType.TABLE
 
     md_score = sum(1 for p in _MD_PATTERNS if p.search(text))
     if md_score >= _MD_THRESHOLD:
