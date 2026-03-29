@@ -40,7 +40,7 @@ from AppKit import NSAppearance, NSCenterTextAlignment, NSTimer
 from Foundation import NSObject
 
 from smartpaste.constants import (
-    ContentType, TargetFormat, FORMAT_OPTIONS, CONTENT_TYPE_LABELS, AI_PRESETS,
+    ContentType, TargetFormat, FORMAT_OPTIONS, CONTENT_TYPE_LABELS, get_ai_presets,
 )
 from smartpaste.preview import PreviewPanel
 
@@ -674,10 +674,16 @@ class FormatPopup:
         old_frame = self._panel.frame()
         self._panel.orderOut_(None)
 
-        # Calculate new frame
-        delta = AI_PANEL_HEIGHT - old_frame.size.height
+        # Calculate panel height dynamically based on preset count
+        presets = get_ai_presets()
+        input_h = 36
+        footer_h = 32
+        ai_panel_height = input_h + 1 + len(presets) * ROW_HEIGHT + footer_h + 8
+        ai_panel_height = max(ai_panel_height, 200)  # minimum height
+
+        delta = ai_panel_height - old_frame.size.height
         new_frame = NSMakeRect(old_frame.origin.x, old_frame.origin.y - delta,
-                               PANEL_WIDTH, AI_PANEL_HEIGHT)
+                               PANEL_WIDTH, ai_panel_height)
 
         panel = _AIPanel.alloc().initWithContentRect_styleMask_backing_defer_(
             new_frame,
@@ -699,7 +705,7 @@ class FormatPopup:
 
         # Blur background
         blur_view = NSVisualEffectView.alloc().initWithFrame_(
-            NSMakeRect(0, 0, PANEL_WIDTH, AI_PANEL_HEIGHT)
+            NSMakeRect(0, 0, PANEL_WIDTH, ai_panel_height)
         )
         blur_view.setMaterial_(9)
         blur_view.setBlendingMode_(0)
@@ -712,7 +718,7 @@ class FormatPopup:
         self._panel = panel
         self._blur_view = blur_view
 
-        panel_h = AI_PANEL_HEIGHT
+        panel_h = ai_panel_height
         input_h = 36  # taller single-line input, command-palette style
 
         # === TOP: Text input flush at the top (command-palette search bar) ===
@@ -789,7 +795,7 @@ class FormatPopup:
 
         # === Preset chips as rows (like command palette results) ===
         row_y = sep_y
-        for preset in AI_PRESETS:
+        for preset in presets:
             row_y -= ROW_HEIGHT
             chip = _PresetChip.alloc_init(
                 NSMakeRect(0, row_y, PANEL_WIDTH, ROW_HEIGHT),

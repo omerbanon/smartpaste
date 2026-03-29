@@ -2,6 +2,8 @@
 
 from enum import Enum, auto
 
+from smartpaste.config import DEFAULT_PRESETS, load_config
+
 
 class ContentType(Enum):
     MARKDOWN = auto()
@@ -65,15 +67,17 @@ FORMAT_OPTIONS: dict[ContentType, list[TargetFormat]] = {
     ],
 }
 
-# AI rephrase preset prompts
-AI_PRESETS: list[str] = [
-    "Fix grammar and spelling",
-    "Make more concise",
-    "Summarize in 2-3 sentences",
-    "Convert to bullet points",
-    "Make more formal / professional",
-    "Format as a Slack message",
-]
+# AI rephrase preset prompts (kept as default reference)
+DEFAULT_AI_PRESETS: list[str] = DEFAULT_PRESETS
+
+
+def get_ai_presets() -> list[str]:
+    """Return AI presets from config, falling back to defaults."""
+    config = load_config()
+    presets = config.get("presets")
+    if presets and isinstance(presets, list):
+        return presets
+    return list(DEFAULT_PRESETS)
 
 # Display labels for content types
 CONTENT_TYPE_LABELS: dict[ContentType, str] = {

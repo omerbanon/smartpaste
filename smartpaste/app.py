@@ -9,17 +9,20 @@ for global hotkey capture.
 import logging
 import sys
 import threading
+from pathlib import Path
 
 import rumps
-from AppKit import NSApplication
+from AppKit import NSApplication, NSImage
 from Foundation import NSObject
 from PyObjCTools.AppHelper import callAfter
 
 from smartpaste.clipboard import read_clipboard_string, write_clipboard
+from smartpaste.config import is_configured
 from smartpaste.constants import ContentType, TargetFormat
 from smartpaste.converters import convert
 from smartpaste.detector import detect
 from smartpaste.hotkey import register_hotkey
+from smartpaste.onboarding import OnboardingWindow
 from smartpaste.popup import FormatPopup, Toast, TOAST_ICON_SUCCESS, TOAST_ICON_WARNING, TOAST_ICON_INFO
 
 logging.basicConfig(
@@ -34,26 +37,29 @@ class SmartPasteApp(rumps.App):
     """Menu bar app that registers a global hotkey and shows a format picker."""
 
     def __init__(self):
+        icon_path = str(Path(__file__).parent / "icon.png")
         super().__init__(
             name="SmartPaste",
-            title="SP",  # menu bar text (Phase 2: replace with template icon)
+            icon=icon_path,
+            template=True,
+            title="",
             quit_button="Quit SmartPaste",
         )
         self._popup = FormatPopup()
         self._toast = Toast()
         self._ai_generation = 0  # cancellation counter for in-flight AI requests
+        self._onboarding: OnboardingWindow | None = None
 
         # Menu items
         self.menu = [
-            rumps.MenuItem("About SmartPaste", callback=self._on_about),
+            rumps.MenuItem("Settings...", callback=self._on_settings),
             None,  # separator
         ]
 
-    def _on_about(self, _sender):
-        rumps.alert(
-            title="SmartPaste",
-            message="Clipboard format conversion tool.\nCmd+Shift+V to activate.",
-        )
+    def _on_settings(self, _sender):
+        """Open the onboarding wizard pre-filled with current config."""
+        self._onboarding = OnboardingWindow()
+        self._onboarding.show()
 
     def _on_hotkey(self) -> None:
         """Called when Cmd+Shift+V is pressed."""
@@ -92,7 +98,7 @@ class SmartPasteApp(rumps.App):
 
         if not get_api_key():
             self._popup.dismiss()
-            self._toast.show("API key not found — add to .env", icon=TOAST_ICON_WARNING)
+            self._toast.show("API key not set — open Settings", icon=TOAST_ICON_WARNING)
             return
 
         # Show loading state in popup
@@ -146,7 +152,21 @@ def main():
 
     app = SmartPasteApp()
     register_hotkey(app._on_hotkey)
+
+    # Show onboarding wizard on first launch (no config file or no API key)
+    if not is_configured():
+        from AppKit import NSTimer
+        NSTimer.scheduledTimerWithTimeInterval_repeats_block_(
+            0.5, False, lambda _: _show_initial_onboarding(app)
+        )
+
     app.run()
+
+
+def _show_initial_onboarding(app: SmartPasteApp) -> None:
+    """Show the onboarding wizard for first-time setup."""
+    app._onboarding = OnboardingWindow()
+    app._onboarding.show()
 
 
 if __name__ == "__main__":

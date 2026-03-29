@@ -9,37 +9,23 @@ Usage:
 """
 
 import logging
-from pathlib import Path
-
-from dotenv import load_dotenv
-import os
 
 import anthropic
 
+from smartpaste.config import load_config
+
 log = logging.getLogger(__name__)
 
-# Load .env from project root (next to smartpaste/ package)
-_ENV_PATH = Path(__file__).resolve().parent.parent / ".env"
-load_dotenv(_ENV_PATH)
-
-_SYSTEM_PROMPT = (
-    "You are a text reformatting assistant for a clipboard tool.\n"
-    "The user will give you an instruction and some text.\n"
-    "Apply the instruction to the text and return ONLY the result.\n"
-    "Do not include any explanation, preamble, commentary, or wrapping.\n"
-    "Do not add markdown code fences unless the user explicitly asks for code.\n"
-    "Preserve the original language unless told to translate."
-)
-
-_MODEL = "claude-haiku-4-5-20251001"
 _TIMEOUT = 30.0
 
 
 def get_api_key() -> str | None:
-    """Return the Anthropic API key from environment, or None if missing."""
-    key = os.environ.get("ANTHROPIC_API_KEY")
+    """Return the Anthropic API key from config, or None if missing."""
+    config = load_config()
+    key = config.get("api_key", "").strip()
     if not key:
-        log.warning("ANTHROPIC_API_KEY not found in environment")
+        log.warning("API key not found in config")
+        return None
     return key
 
 
@@ -58,19 +44,23 @@ def rephrase(prompt: str, text: str) -> str:
         anthropic.APITimeoutError: If the request exceeds the timeout.
         ValueError: If no API key is configured.
     """
-    key = get_api_key()
+    config = load_config()
+    key = config.get("api_key", "").strip()
     if not key:
-        raise ValueError("API key not found — add ANTHROPIC_API_KEY to .env")
+        raise ValueError("API key not configured — open Settings to add one")
+
+    model = config.get("model", "claude-haiku-4-5-20251001")
+    system_prompt = config.get("system_prompt", "")
 
     client = anthropic.Anthropic(api_key=key, timeout=_TIMEOUT)
 
     user_message = f"Instruction: {prompt}\n\nText:\n{text}"
 
-    log.info("AI rephrase: sending request (model=%s, prompt=%r)", _MODEL, prompt)
+    log.info("AI rephrase: sending request (model=%s, prompt=%r)", model, prompt)
     response = client.messages.create(
-        model=_MODEL,
+        model=model,
         max_tokens=4096,
-        system=_SYSTEM_PROMPT,
+        system=system_prompt,
         messages=[{"role": "user", "content": user_message}],
     )
 
