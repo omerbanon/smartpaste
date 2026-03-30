@@ -39,10 +39,12 @@ from AppKit import (
 from AppKit import NSAppearance, NSCenterTextAlignment, NSTimer
 from Foundation import NSObject
 
+from WebKit import WKWebView, WKWebViewConfiguration
+
 from smartpaste.constants import (
     ContentType, TargetFormat, FORMAT_OPTIONS, CONTENT_TYPE_LABELS, get_ai_presets,
 )
-from smartpaste.preview import PreviewPanel
+from smartpaste.preview import PreviewPanel, _render_to_html, _CopyButton
 
 
 class _FieldActionTarget(NSObject):
@@ -106,7 +108,7 @@ class _AIPanel(NSPanel):
 log = logging.getLogger(__name__)
 
 # Layout constants
-PANEL_WIDTH = 480
+PANEL_WIDTH = 560
 ROW_HEIGHT = 44
 ROW_INSET = 8        # horizontal inset for row highlight
 ROW_PADDING = 6      # vertical padding inside rows
@@ -114,6 +116,11 @@ HEADER_HEIGHT = 52    # header area including padding
 FOOTER_HEIGHT = 32    # bottom hint bar
 CORNER_RADIUS = 12
 PADDING_H = 16        # horizontal padding for text
+
+# Inline preview section
+PREVIEW_SECTION_HEIGHT = 400
+PREVIEW_TITLE_HEIGHT = 32
+PREVIEW_TOTAL_HEIGHT = PREVIEW_SECTION_HEIGHT + PREVIEW_TITLE_HEIGHT + 1  # +1 separator
 
 # AI sub-panel layout
 AI_PANEL_HEIGHT = 340
@@ -368,6 +375,16 @@ class FormatPopup:
         self._ai_chips: list[_PresetChip] = []
         self._ai_selected_index: int = -1  # -1 = text input focused, 0+ = preset row
         self._transitioning = False  # guard: ignore global clicks during AI panel swap
+        # Inline preview state
+        self._preview_visible = False
+        self._preview_webview: WKWebView | None = None
+        self._preview_title_bar: NSView | None = None
+        self._preview_separator: NSView | None = None
+        self._preview_copy_btn: _CopyButton | None = None
+        self._preview_loaded_text: str = ""
+        self._base_panel_height: float = 0
+        self._footer_field: NSTextField | None = None
+        self._preview_animating = False
 
     def show(
         self,
@@ -391,9 +408,12 @@ class FormatPopup:
         self._clipboard_text = clipboard_text
         self._ai_mode = False
         self._loading = False
+        self._preview_visible = False
+        self._preview_animating = False
 
         num_rows = len(self._formats)
         panel_height = HEADER_HEIGHT + num_rows * ROW_HEIGHT + FOOTER_HEIGHT + 12
+        self._base_panel_height = panel_height
 
         # Center on screen, upper third
         screen = NSScreen.mainScreen()
@@ -514,6 +534,7 @@ class FormatPopup:
         footer.setFont_(NSFont.systemFontOfSize_(10.5))
         footer.setTextColor_(_CLR_TEXT_DIM)
         blur_view.addSubview_(footer)
+        self._footer_field = footer
 
         # --- Event monitors ---
         # Local monitor for keyboard events
@@ -548,6 +569,20 @@ class FormatPopup:
         """Close the popup and return focus to the previous app."""
         if self._preview.is_visible:
             self._preview.dismiss()
+        # Clean up inline preview
+        self._preview_visible = False
+        self._preview_animating = False
+        if self._preview_webview:
+            self._preview_webview.removeFromSuperview()
+            self._preview_webview = None
+        if self._preview_title_bar:
+            self._preview_title_bar.removeFromSuperview()
+            self._preview_title_bar = None
+        if self._preview_separator:
+            self._preview_separator.removeFromSuperview()
+            self._preview_separator = None
+        self._preview_copy_btn = None
+        self._footer_field = None
         self._stop_loading_animation()
         if self._local_monitor:
             NSEvent.removeMonitor_(self._local_monitor)
@@ -658,6 +693,21 @@ class FormatPopup:
         """
         if not self._panel:
             return
+
+        # Clean up inline preview if open
+        if self._preview_visible:
+            self._preview_visible = False
+            self._preview_animating = False
+            if self._preview_webview:
+                self._preview_webview.removeFromSuperview()
+                self._preview_webview = None
+            if self._preview_title_bar:
+                self._preview_title_bar.removeFromSuperview()
+                self._preview_title_bar = None
+            if self._preview_separator:
+                self._preview_separator.removeFromSuperview()
+                self._preview_separator = None
+            self._preview_copy_btn = None
 
         self._ai_mode = True
         self._transitioning = True
@@ -914,7 +964,7 @@ class FormatPopup:
 
     def _handle_global_click(self, event) -> None:
         """Dismiss popup when user clicks outside it."""
-        if self._loading or self._transitioning:
+        if self._loading or self._transitioning or self._preview_animating:
             return
         if self._preview and self._preview.is_visible:
             return
@@ -927,10 +977,21 @@ class FormatPopup:
 
         keycode = event.keyCode()
 
-        # Esc (53)
+        # Esc (53) — if preview open, collapse first; second Esc dismisses popup
         if keycode == 53:
+            if self._preview_visible:
+                self._toggle_preview()
+                return None
             self.dismiss()
             return None
+
+        # C (8) bare — if preview visible, copy all text
+        if keycode == 8 and self._preview_visible:
+            flags = event.modifierFlags()
+            cmd_held = bool(flags & (1 << 20))
+            if not cmd_held:
+                self._on_preview_copy()
+                return None
 
         # Down arrow (125)
         if keycode == 125:
@@ -968,12 +1029,176 @@ class FormatPopup:
                     return None
             return event
 
-        # P (35) — open preview
+        # P (35) — toggle inline preview
         if keycode == 35 and self._clipboard_text:
-            self._preview.show(self._clipboard_text)
+            self._toggle_preview()
             return None
 
         return event
+
+    def _toggle_preview(self) -> None:
+        """Toggle the inline preview section."""
+        if self._preview_animating:
+            return
+        if self._preview_visible:
+            self._collapse_preview()
+        else:
+            self._expand_preview()
+
+    def _expand_preview(self) -> None:
+        """Expand inline preview section below the format list."""
+        if not self._panel or not self._blur_view or self._preview_visible:
+            return
+
+        self._preview_animating = True
+        self._preview_visible = True
+
+        base_h = self._base_panel_height
+        new_height = base_h + PREVIEW_TOTAL_HEIGHT
+
+        # Screen bounds check — if expanding would push below screen, shift up
+        panel_frame = self._panel.frame()
+        screen = NSScreen.mainScreen()
+        screen_bottom = screen.frame().origin.y
+        new_origin_y = panel_frame.origin.y - PREVIEW_TOTAL_HEIGHT
+        if new_origin_y < screen_bottom:
+            new_origin_y = screen_bottom
+
+        # Shift all existing subviews up by PREVIEW_TOTAL_HEIGHT (macOS bottom-left coords)
+        for subview in list(self._blur_view.subviews()):
+            f = subview.frame()
+            subview.setFrame_(NSMakeRect(f.origin.x, f.origin.y + PREVIEW_TOTAL_HEIGHT,
+                                         f.size.width, f.size.height))
+
+        # Resize blur view
+        self._blur_view.setFrame_(NSMakeRect(0, 0, PANEL_WIDTH, new_height))
+
+        # --- Separator at boundary ---
+        sep_y = PREVIEW_TOTAL_HEIGHT - 1
+        sep = NSView.alloc().initWithFrame_(
+            NSMakeRect(PADDING_H, sep_y, PANEL_WIDTH - PADDING_H * 2, 1)
+        )
+        sep.setWantsLayer_(True)
+        sep.layer().setBackgroundColor_(_CLR_SEPARATOR.CGColor())
+        self._blur_view.addSubview_(sep)
+        self._preview_separator = sep
+
+        # --- Mini title bar (32px) with "Preview" label + Copy button ---
+        title_bar_y = PREVIEW_SECTION_HEIGHT
+        title_bar = NSView.alloc().initWithFrame_(
+            NSMakeRect(0, title_bar_y, PANEL_WIDTH, PREVIEW_TITLE_HEIGHT)
+        )
+        self._blur_view.addSubview_(title_bar)
+        self._preview_title_bar = title_bar
+
+        title_label = NSTextField.alloc().initWithFrame_(
+            NSMakeRect(PADDING_H, 6, 120, 20)
+        )
+        title_label.setStringValue_("Preview")
+        title_label.setBezeled_(False)
+        title_label.setDrawsBackground_(False)
+        title_label.setEditable_(False)
+        title_label.setSelectable_(False)
+        title_label.setFont_(NSFont.systemFontOfSize_weight_(12, NSFontWeightMedium))
+        title_label.setTextColor_(NSColor.colorWithWhite_alpha_(1.0, 0.50))
+        title_bar.addSubview_(title_label)
+
+        # Copy button in title bar
+        copy_btn_w = 60
+        copy_btn_h = 24
+        copy_btn = _CopyButton.alloc_init(
+            NSMakeRect(PANEL_WIDTH - copy_btn_w - 12, 4, copy_btn_w, copy_btn_h),
+            on_click=self._on_preview_copy,
+        )
+        title_bar.addSubview_(copy_btn)
+        self._preview_copy_btn = copy_btn
+
+        # --- WKWebView for rendered content ---
+        webview_frame = NSMakeRect(6, 6, PANEL_WIDTH - 12, PREVIEW_SECTION_HEIGHT - 8)
+        config = WKWebViewConfiguration.alloc().init()
+        webview = WKWebView.alloc().initWithFrame_configuration_(webview_frame, config)
+        webview.setWantsLayer_(True)
+        webview.layer().setCornerRadius_(8)
+        webview.layer().setMasksToBounds_(True)
+        webview.setValue_forKey_(False, "drawsBackground")
+
+        html = _render_to_html(self._clipboard_text)
+        webview.loadHTMLString_baseURL_(html, None)
+        self._blur_view.addSubview_(webview)
+        self._preview_webview = webview
+        self._preview_loaded_text = self._clipboard_text
+
+        # Update footer hints
+        if self._footer_field:
+            self._footer_field.setStringValue_("P Close preview    C Copy    \u2191\u2193 Navigate    Esc Close")
+
+        # Animate panel frame change
+        new_frame = NSMakeRect(panel_frame.origin.x, new_origin_y,
+                               PANEL_WIDTH, new_height)
+        NSAnimationContext.beginGrouping()
+        ctx = NSAnimationContext.currentContext()
+        ctx.setDuration_(0.15)
+        ctx.setCompletionHandler_(lambda: setattr(self, '_preview_animating', False))
+        self._panel.animator().setFrame_display_(new_frame, True)
+        NSAnimationContext.endGrouping()
+
+        log.debug("Inline preview expanded")
+
+    def _collapse_preview(self) -> None:
+        """Collapse the inline preview section."""
+        if not self._panel or not self._blur_view or not self._preview_visible:
+            return
+
+        self._preview_animating = True
+        self._preview_visible = False
+
+        # Remove preview subviews
+        if self._preview_webview:
+            self._preview_webview.removeFromSuperview()
+            self._preview_webview = None
+        if self._preview_title_bar:
+            self._preview_title_bar.removeFromSuperview()
+            self._preview_title_bar = None
+        if self._preview_separator:
+            self._preview_separator.removeFromSuperview()
+            self._preview_separator = None
+        self._preview_copy_btn = None
+
+        # Shift existing subviews back down
+        for subview in list(self._blur_view.subviews()):
+            f = subview.frame()
+            subview.setFrame_(NSMakeRect(f.origin.x, f.origin.y - PREVIEW_TOTAL_HEIGHT,
+                                         f.size.width, f.size.height))
+
+        # Resize blur view back
+        base_h = self._base_panel_height
+        self._blur_view.setFrame_(NSMakeRect(0, 0, PANEL_WIDTH, base_h))
+
+        # Restore footer hints
+        if self._footer_field:
+            self._footer_field.setStringValue_("\u2191\u2193 Navigate    \u21A9 Select    P Preview    A AI    Esc Cancel")
+
+        # Animate panel frame back
+        panel_frame = self._panel.frame()
+        restored_y = panel_frame.origin.y + PREVIEW_TOTAL_HEIGHT
+        new_frame = NSMakeRect(panel_frame.origin.x, restored_y,
+                               PANEL_WIDTH, base_h)
+        NSAnimationContext.beginGrouping()
+        ctx = NSAnimationContext.currentContext()
+        ctx.setDuration_(0.15)
+        ctx.setCompletionHandler_(lambda: setattr(self, '_preview_animating', False))
+        self._panel.animator().setFrame_display_(new_frame, True)
+        NSAnimationContext.endGrouping()
+
+        log.debug("Inline preview collapsed")
+
+    def _on_preview_copy(self) -> None:
+        """Copy clipboard text and show feedback on the preview copy button."""
+        from smartpaste.clipboard import write_clipboard
+        write_clipboard(plain=self._clipboard_text)
+        if self._preview_copy_btn:
+            self._preview_copy_btn.show_copied_feedback()
+        log.info("Inline preview: text copied to clipboard")
 
     def _move_selection(self, delta: int) -> None:
         """Move the selection highlight by delta rows."""
