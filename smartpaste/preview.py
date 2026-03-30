@@ -241,7 +241,10 @@ def _render_to_html(text: str) -> str:
     """Pick the right renderer based on content type."""
     if _is_tsv(text):
         return _render_tsv_to_html(text)
-    if _is_terminal(text):
+    from smartpaste.converters.box_table import has_box_drawing, convert_box_tables_to_markdown
+    if has_box_drawing(text):
+        text = convert_box_tables_to_markdown(text)
+    elif _is_terminal(text):
         from smartpaste.converters.terminal_clean import clean_terminal_text
         text = clean_terminal_text(text)
     return _render_md_to_html(text)

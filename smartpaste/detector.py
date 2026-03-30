@@ -102,6 +102,12 @@ def detect(text: str) -> ContentType:
     if _is_tsv(text):
         return ContentType.TABLE
 
+    # Box-drawing tables (CLI tool output) → treat as MARKDOWN
+    # (preprocessing converts them to pipe tables before converters run)
+    from smartpaste.converters.box_table import has_box_drawing
+    if has_box_drawing(text):
+        return ContentType.MARKDOWN
+
     md_score = sum(1 for p in _MD_PATTERNS if p.search(text))
     if md_score >= _MD_THRESHOLD:
         return ContentType.MARKDOWN

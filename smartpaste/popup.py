@@ -916,6 +916,8 @@ class FormatPopup:
         """Dismiss popup when user clicks outside it."""
         if self._loading or self._transitioning:
             return
+        if self._preview and self._preview.is_visible:
+            return
         self.dismiss()
 
     def _handle_key_event(self, event) -> object:

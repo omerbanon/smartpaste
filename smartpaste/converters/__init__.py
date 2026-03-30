@@ -29,6 +29,9 @@ def register(content_type: ContentType, target_format: TargetFormat):
 
 def convert(content_type: ContentType, target_format: TargetFormat, text: str) -> ConverterResult:
     """Look up and run the appropriate converter."""
+    from smartpaste.converters.box_table import has_box_drawing, convert_box_tables_to_markdown
+    if has_box_drawing(text):
+        text = convert_box_tables_to_markdown(text)
     fn = _registry.get((content_type, target_format))
     if fn is None:
         log.warning("No converter for %s → %s, returning plain text", content_type, target_format)
