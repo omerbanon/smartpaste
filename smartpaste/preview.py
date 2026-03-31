@@ -4,6 +4,8 @@ Renders clipboard markdown as formatted HTML in a dark WKWebView panel.
 Triggered by pressing "P" while the format popup is open.
 """
 
+import html as html_mod
+import json
 import logging
 import re
 
@@ -180,8 +182,6 @@ def _is_tsv(text: str) -> bool:
 
 def _render_tsv_to_html(text: str) -> str:
     """Convert tab-separated data to a dark-themed HTML table."""
-    import html as html_mod
-
     lines = [l for l in text.strip().splitlines() if l.strip()]
     rows = [l.split("\t") for l in lines]
 
@@ -213,6 +213,148 @@ def _render_tsv_to_html(text: str) -> str:
 </html>"""
 
 
+def _is_json(text: str) -> bool:
+    """Check if text is a JSON object or array."""
+    stripped = text.strip()
+    if not (stripped.startswith(("{", "[")) and stripped.endswith(("}", "]"))):
+        return False
+    try:
+        json.loads(stripped)
+        return True
+    except (json.JSONDecodeError, ValueError):
+        return False
+
+
+_JSON_CSS = """
+:root { color-scheme: dark; }
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+    font-family: 'SF Mono', Menlo, monospace;
+    font-size: 13px;
+    line-height: 1.6;
+    color: rgba(255, 255, 255, 0.88);
+    background: transparent;
+    padding: 16px 20px;
+    -webkit-font-smoothing: antialiased;
+}
+.tree { list-style: none; padding-left: 0; }
+.tree ul { list-style: none; padding-left: 20px; }
+.toggle {
+    cursor: pointer;
+    user-select: none;
+    display: inline-block;
+    width: 16px;
+    text-align: center;
+    color: rgba(255,255,255,0.4);
+    font-size: 11px;
+}
+.toggle:hover { color: rgba(255,255,255,0.8); }
+.key { color: #c9a0ff; }
+.str { color: #98c379; }
+.num { color: #6cb4ff; }
+.bool { color: #e5a63c; }
+.null { color: rgba(255,255,255,0.4); }
+.bracket { color: rgba(255,255,255,0.5); }
+.badge {
+    font-size: 11px;
+    color: rgba(255,255,255,0.35);
+    margin-left: 4px;
+}
+.comma { color: rgba(255,255,255,0.3); }
+.hidden { display: none; }
+li { white-space: nowrap; }
+::selection { background: rgba(100, 160, 255, 0.35); color: inherit; }
+body { -webkit-user-select: text; cursor: text; }
+"""
+
+_JSON_JS = """
+function toggle(el) {
+    var children = el.parentElement.querySelector('ul');
+    var badge = el.parentElement.querySelector('.badge');
+    if (!children) return;
+    if (children.classList.contains('hidden')) {
+        children.classList.remove('hidden');
+        el.textContent = '\\u25BC';
+        if (badge) badge.classList.add('hidden');
+    } else {
+        children.classList.add('hidden');
+        el.textContent = '\\u25B6';
+        if (badge) badge.classList.remove('hidden');
+    }
+}
+"""
+
+
+def _render_json_to_html(text: str) -> str:
+    """Render JSON as a collapsible tree view."""
+    data = json.loads(text.strip())
+
+    def _val(v, depth=0):
+        """Render a JSON value as HTML."""
+        if isinstance(v, dict):
+            return _obj(v, depth)
+        if isinstance(v, list):
+            return _arr(v, depth)
+        if isinstance(v, str):
+            return f'<span class="str">&quot;{html_mod.escape(v)}&quot;</span>'
+        if isinstance(v, bool):
+            return f'<span class="bool">{"true" if v else "false"}</span>'
+        if v is None:
+            return '<span class="null">null</span>'
+        return f'<span class="num">{html_mod.escape(str(v))}</span>'
+
+    def _obj(obj, depth=0):
+        if not obj:
+            return '<span class="bracket">{}</span>'
+        collapsed = ' class="hidden"' if depth > 0 else ""
+        badge_cls = ' class="badge"' if depth > 0 else ' class="badge hidden"'
+        arrow = "▶" if depth > 0 else "▼"
+        items = []
+        keys = list(obj.keys())
+        for i, k in enumerate(keys):
+            comma = '<span class="comma">,</span>' if i < len(keys) - 1 else ""
+            items.append(
+                f'<li><span class="key">&quot;{html_mod.escape(k)}&quot;</span>: '
+                f'{_val(obj[k], depth + 1)}{comma}</li>'
+            )
+        return (
+            f'<span class="toggle" onclick="toggle(this)">{arrow}</span>'
+            f'<span class="bracket">{{</span>'
+            f'<span{badge_cls}>{{{len(obj)}}}</span>'
+            f'<ul{collapsed}>{"".join(items)}</ul>'
+            f'<span class="bracket">}}</span>'
+        )
+
+    def _arr(arr, depth=0):
+        if not arr:
+            return '<span class="bracket">[]</span>'
+        collapsed = ' class="hidden"' if depth > 0 else ""
+        badge_cls = ' class="badge"' if depth > 0 else ' class="badge hidden"'
+        arrow = "▶" if depth > 0 else "▼"
+        items = []
+        for i, item in enumerate(arr):
+            comma = '<span class="comma">,</span>' if i < len(arr) - 1 else ""
+            items.append(f'<li>{_val(item, depth + 1)}{comma}</li>')
+        return (
+            f'<span class="toggle" onclick="toggle(this)">{arrow}</span>'
+            f'<span class="bracket">[</span>'
+            f'<span{badge_cls}>[{len(arr)}]</span>'
+            f'<ul{collapsed}>{"".join(items)}</ul>'
+            f'<span class="bracket">]</span>'
+        )
+
+    tree_html = f'<ul class="tree"><li>{_val(data, 0)}</li></ul>'
+
+    return f"""<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8">
+<style>{_JSON_CSS}</style>
+<script>{_JSON_JS}</script>
+</head>
+<body>{tree_html}</body>
+</html>"""
+
+
 def _render_md_to_html(text: str) -> str:
     """Convert markdown to a full HTML page with dark styling."""
     text = _preprocess_for_preview(text)
@@ -241,6 +383,8 @@ def _render_to_html(text: str) -> str:
     """Pick the right renderer based on content type."""
     if _is_tsv(text):
         return _render_tsv_to_html(text)
+    if _is_json(text):
+        return _render_json_to_html(text)
     from smartpaste.converters.box_table import has_box_drawing, convert_box_tables_to_markdown
     if has_box_drawing(text):
         text = convert_box_tables_to_markdown(text)

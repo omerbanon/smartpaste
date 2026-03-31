@@ -1,5 +1,6 @@
 """Content type detection via regex heuristics for SmartPaste."""
 
+import json
 import re
 
 from smartpaste.constants import ContentType
@@ -76,6 +77,18 @@ _CODE_PATTERNS: list[re.Pattern[str]] = [
     re.compile(r"^\s{4,}\S", re.MULTILINE),                # 4+ space indentation
 ]
 
+def _is_json(text: str) -> bool:
+    """Detect JSON objects or arrays (not bare strings/numbers)."""
+    stripped = text.strip()
+    if not (stripped.startswith(("{", "[")) and stripped.endswith(("}", "]"))):
+        return False
+    try:
+        json.loads(stripped)
+        return True
+    except (json.JSONDecodeError, ValueError):
+        return False
+
+
 _MD_THRESHOLD = 2
 _CODE_THRESHOLD = 3
 
@@ -107,6 +120,10 @@ def detect(text: str) -> ContentType:
     from smartpaste.converters.box_table import has_box_drawing
     if has_box_drawing(text):
         return ContentType.MARKDOWN
+
+    # JSON objects/arrays — same format options as Code
+    if _is_json(text):
+        return ContentType.CODE
 
     md_score = sum(1 for p in _MD_PATTERNS if p.search(text))
     if md_score >= _MD_THRESHOLD:
