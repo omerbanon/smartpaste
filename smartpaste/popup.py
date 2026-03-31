@@ -165,6 +165,56 @@ FORMAT_ICONS: dict[TargetFormat, str] = {
 }
 
 
+class _CloseButton(NSView):
+    """Small circular X close button."""
+
+    @classmethod
+    def alloc_init(cls, frame, on_click):
+        self = cls.alloc().initWithFrame_(frame)
+        self._on_click = on_click
+        self._hovered = False
+
+        # Tracking area for hover effect
+        tracking = NSTrackingArea.alloc().initWithRect_options_owner_userInfo_(
+            self.bounds(),
+            NSTrackingMouseEnteredAndExited | NSTrackingActiveAlways,
+            self,
+            None,
+        )
+        self.addTrackingArea_(tracking)
+        return self
+
+    def drawRect_(self, rect):
+        if self._hovered:
+            NSColor.colorWithWhite_alpha_(1.0, 0.12).set()
+        else:
+            NSColor.colorWithWhite_alpha_(1.0, 0.0).set()
+        path = NSBezierPath.bezierPathWithOvalInRect_(self.bounds())
+        path.fill()
+        # Draw X
+        NSColor.colorWithWhite_alpha_(1.0, 0.45 if not self._hovered else 0.75).set()
+        x_path = NSBezierPath.alloc().init()
+        cx, cy = self.bounds().size.width / 2, self.bounds().size.height / 2
+        s = 4.5  # half-size of X
+        x_path.moveToPoint_((cx - s, cy - s))
+        x_path.lineToPoint_((cx + s, cy + s))
+        x_path.moveToPoint_((cx + s, cy - s))
+        x_path.lineToPoint_((cx - s, cy + s))
+        x_path.setLineWidth_(1.5)
+        x_path.stroke()
+
+    def mouseEntered_(self, event):
+        self._hovered = True
+        self.setNeedsDisplay_(True)
+
+    def mouseExited_(self, event):
+        self._hovered = False
+        self.setNeedsDisplay_(True)
+
+    def mouseDown_(self, event):
+        self._on_click()
+
+
 class _FormatRow(NSView):
     """A single format option row with hover/selection highlighting."""
 
@@ -470,6 +520,13 @@ class FormatPopup:
         header.setTextColor_(_CLR_TEXT_SECONDARY)
         blur_view.addSubview_(header)
 
+        # Close (X) button — top right
+        close_btn = _CloseButton.alloc_init(
+            NSMakeRect(PANEL_WIDTH - 36, header_y - 2, 26, 26),
+            on_click=self.dismiss,
+        )
+        blur_view.addSubview_(close_btn)
+
         # Content type badge: "Markdown  ·  247 chars"
         badge_y = header_y - 18
         type_label = CONTENT_TYPE_LABELS.get(content_type, "Content")
@@ -542,11 +599,7 @@ class FormatPopup:
             1 << 10,  # NSKeyDownMask
             self._handle_key_event,
         )
-        # Global monitor to dismiss on click outside
-        self._global_monitor = NSEvent.addGlobalMonitorForEventsMatchingMask_handler_(
-            (1 << 1) | (1 << 3),  # NSLeftMouseDownMask | NSRightMouseDownMask
-            self._handle_global_click,
-        )
+        # No global click monitor — popup only closes via Esc or X button
 
         self._panel = panel
 
@@ -961,14 +1014,6 @@ class FormatPopup:
             self.dismiss()
             if cb:
                 cb(fmt)
-
-    def _handle_global_click(self, event) -> None:
-        """Dismiss popup when user clicks outside it."""
-        if self._loading or self._transitioning or self._preview_animating:
-            return
-        if self._preview and self._preview.is_visible:
-            return
-        self.dismiss()
 
     def _handle_key_event(self, event) -> object:
         """Handle keyboard navigation (normal mode — format list)."""
