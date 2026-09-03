@@ -60,3 +60,53 @@ def age_label(copied_at: float, now: float | None = None) -> str:
     if secs < 3600:
         return f"{secs // 60}m"
     return f"{secs // 3600}h"
+
+
+CONCEALED_TYPES = ("org.nspasteboard.ConcealedType", "org.nspasteboard.TransientType")
+
+
+class ClipboardWatcher:
+    """Polls the pasteboard change counter and records new text copies.
+
+    All pasteboard access is injected so the rules are testable without AppKit.
+    """
+
+    def __init__(
+        self,
+        history: ClipboardHistory,
+        *,
+        change_count: Callable[[], int] | None = None,
+        own_change_count: Callable[[], int] | None = None,
+        read_types: Callable[[], list[str]] | None = None,
+        read_text: Callable[[], str | None] | None = None,
+    ):
+        from smartpaste import clipboard as cb
+        self._history = history
+        self._change_count = change_count or cb.change_count
+        self._own_change_count = own_change_count or cb.last_own_change_count
+        self._read_types = read_types or cb.read_clipboard_types
+        self._read_text = read_text or cb.read_clipboard_string
+        self._last_seen = self._change_count()
+        self._timer = None
+
+    def poll(self) -> bool:
+        """Check once. Returns True if a new item was recorded."""
+        count = self._change_count()
+        if count == self._last_seen:
+            return False
+        self._last_seen = count
+        if count == self._own_change_count():
+            return False
+        if any(t in CONCEALED_TYPES for t in self._read_types()):
+            return False
+        text = self._read_text()
+        if not text:
+            return False
+        return self._history.push(text)
+
+    def start(self, interval: float = 0.5) -> None:
+        """Poll on the main run loop every *interval* seconds."""
+        from AppKit import NSTimer
+        self._timer = NSTimer.scheduledTimerWithTimeInterval_repeats_block_(
+            interval, True, lambda _: self.poll()
+        )

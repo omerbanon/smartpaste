@@ -8,6 +8,18 @@ from smartpaste.constants import PASTEBOARD_TYPE_HTML, PASTEBOARD_TYPE_PLAIN
 
 log = logging.getLogger(__name__)
 
+_own_change_count: int = -1
+
+
+def change_count() -> int:
+    """The pasteboard's change counter; it increments on every copy."""
+    return int(NSPasteboard.generalPasteboard().changeCount())
+
+
+def last_own_change_count() -> int:
+    """Change counter of the last write SmartPaste made (so the watcher skips it)."""
+    return _own_change_count
+
 
 def read_clipboard_string() -> str | None:
     """Read plain-text string from the system clipboard."""
@@ -55,5 +67,8 @@ def write_clipboard(*, html: str | None = None, plain: str | None = None) -> Non
         pb.setString_forType_(html, PASTEBOARD_TYPE_HTML)
     if plain:
         pb.setString_forType_(plain, PASTEBOARD_TYPE_PLAIN)
+
+    global _own_change_count
+    _own_change_count = int(pb.changeCount())
 
     log.debug("Wrote to clipboard: html=%s, plain=%s", bool(html), bool(plain))

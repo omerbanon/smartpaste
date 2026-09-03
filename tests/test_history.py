@@ -47,3 +47,64 @@ def test_age_label():
     assert age_label(100, now=130) == "now"
     assert age_label(100, now=100 + 5 * 60) == "5m"
     assert age_label(100, now=100 + 3 * 3600) == "3h"
+
+
+# --- watcher -----------------------------------------------------------------
+
+from smartpaste.history import ClipboardWatcher, CONCEALED_TYPES
+
+
+class FakeBoard:
+    def __init__(self):
+        self.count = 0
+        self.own = -1
+        self.types = ["public.utf8-plain-text"]
+        self.text = "hello"
+
+    def watcher(self, history):
+        return ClipboardWatcher(
+            history,
+            change_count=lambda: self.count,
+            own_change_count=lambda: self.own,
+            read_types=lambda: self.types,
+            read_text=lambda: self.text,
+        )
+
+
+def test_watcher_records_new_text():
+    b, h = FakeBoard(), ClipboardHistory()
+    w = b.watcher(h)
+    b.count = 1
+    assert w.poll() is True
+    assert h.items()[0].text == "hello"
+
+
+def test_watcher_ignores_unchanged_counter():
+    b, h = FakeBoard(), ClipboardHistory()
+    w = b.watcher(h)
+    b.count = 1; w.poll()
+    b.text = "changed but counter did not"
+    assert w.poll() is False
+    assert len(h) == 1
+
+
+def test_watcher_skips_smartpaste_own_writes():
+    b, h = FakeBoard(), ClipboardHistory()
+    w = b.watcher(h)
+    b.count = 1; b.own = 1
+    assert w.poll() is False
+    assert len(h) == 0
+
+
+def test_watcher_skips_concealed_pasteboards():
+    b, h = FakeBoard(), ClipboardHistory()
+    w = b.watcher(h)
+    b.count = 1; b.types = ["public.utf8-plain-text", CONCEALED_TYPES[0]]
+    assert w.poll() is False
+
+
+def test_watcher_skips_non_text():
+    b, h = FakeBoard(), ClipboardHistory()
+    w = b.watcher(h)
+    b.count = 1; b.text = None; b.types = ["public.png"]
+    assert w.poll() is False
