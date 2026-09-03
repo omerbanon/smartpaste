@@ -21,6 +21,8 @@ from smartpaste.config import is_configured
 from smartpaste.constants import ContentType, TargetFormat
 from smartpaste.converters import convert
 from smartpaste.detector import detect
+from smartpaste.history import ClipboardHistory, ClipboardWatcher
+from smartpaste.history_panel import HistoryPanel
 from smartpaste.hotkey import register_hotkey
 from smartpaste.onboarding import OnboardingWindow
 from smartpaste.popup import FormatPopup, Toast, TOAST_ICON_SUCCESS, TOAST_ICON_WARNING, TOAST_ICON_INFO
@@ -47,6 +49,9 @@ class SmartPasteApp(rumps.App):
         )
         self._popup = FormatPopup()
         self._toast = Toast()
+        self._history = ClipboardHistory()
+        self._watcher = ClipboardWatcher(self._history)
+        self._history_panel = HistoryPanel()
         self._ai_generation = 0  # cancellation counter for in-flight AI requests
         self._onboarding: OnboardingWindow | None = None
 
@@ -71,16 +76,38 @@ class SmartPasteApp(rumps.App):
             self._toast.show("No text on clipboard", icon=TOAST_ICON_WARNING)
             return
 
+        self._show_popup_for(text)
+
+    def _show_popup_for(self, text: str) -> None:
+        """Show the format popup for *text* (a fresh copy or a history pick)."""
         content_type = detect(text)
         log.info("Detected content type: %s", content_type)
-
         self._popup.show(
             content_type,
             on_select=lambda fmt: self._on_format_selected(text, content_type, fmt),
             on_ai_select=lambda prompt: self._on_ai_rephrase(text, prompt),
             char_count=len(text),
             clipboard_text=text,
+            on_history=lambda: self._open_history(text),
         )
+
+    def _open_history(self, current_text: str) -> None:
+        """L pressed: swap the popup for the history list."""
+        self._history_panel.show(
+            self._history,
+            on_pick=self._on_history_pick,
+            on_back=lambda: self._show_popup_for(current_text),
+        )
+
+    def _on_history_pick(self, index: int) -> None:
+        """Make the picked item the working text: clipboard + format popup."""
+        items = self._history.items()
+        if not 0 <= index < len(items):
+            return
+        text = items[index].text
+        self._history.touch(index)
+        write_clipboard(plain=text)
+        self._show_popup_for(text)
 
     def _on_format_selected(self, text: str, content_type: ContentType, target_format: TargetFormat) -> None:
         """Called when user picks a format in the popup."""
@@ -152,6 +179,7 @@ def main():
 
     app = SmartPasteApp()
     register_hotkey(app._on_hotkey)
+    app._watcher.start()
 
     # Show onboarding wizard on first launch (no config file or no API key)
     if not is_configured():

@@ -408,6 +408,7 @@ class FormatPopup:
         self._formats: list[TargetFormat] = []
         self._callback: Callable[[TargetFormat], None] | None = None
         self._ai_callback: Callable[[str], None] | None = None
+        self._history_callback: Callable[[], None] | None = None
         self._local_monitor = None
         self._global_monitor = None
         self._preview = PreviewPanel()
@@ -443,6 +444,7 @@ class FormatPopup:
         on_ai_select: Callable[[str], None] | None = None,
         char_count: int = 0,
         clipboard_text: str = "",
+        on_history: Callable[[], None] | None = None,
     ) -> None:
         """Display the popup with format options for the given content type."""
         _init_colors()
@@ -454,6 +456,7 @@ class FormatPopup:
         self._formats = FORMAT_OPTIONS.get(content_type, [TargetFormat.PLAIN])
         self._callback = on_select
         self._ai_callback = on_ai_select
+        self._history_callback = on_history
         self._selected_index = 0
         self._clipboard_text = clipboard_text
         self._ai_mode = False
@@ -583,7 +586,7 @@ class FormatPopup:
         footer = NSTextField.alloc().initWithFrame_(
             NSMakeRect(PADDING_H, 8, PANEL_WIDTH - PADDING_H * 2, 16)
         )
-        footer.setStringValue_("\u2191\u2193 Navigate    \u21A9 Select    P Preview    A AI    Esc Cancel")
+        footer.setStringValue_("\u2191\u2193 Navigate    \u21A9 Select    P Preview    A AI    L History    Esc Cancel")
         footer.setBezeled_(False)
         footer.setDrawsBackground_(False)
         footer.setEditable_(False)
@@ -652,6 +655,7 @@ class FormatPopup:
         self._formats = []
         self._callback = None
         self._ai_callback = None
+        self._history_callback = None
         self._ai_mode = False
         self._ai_input = None
         self._ai_text_view = None
@@ -1073,6 +1077,13 @@ class FormatPopup:
                     self._on_button_click(i)
                     return None
             return event
+
+        # L (37) — open clipboard history
+        if keycode == 37 and self._history_callback:
+            cb = self._history_callback
+            self.dismiss()
+            cb()
+            return None
 
         # P (35) — toggle inline preview
         if keycode == 35 and self._clipboard_text:
