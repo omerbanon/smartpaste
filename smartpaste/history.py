@@ -4,9 +4,12 @@ Keeps the last N text copies, newest first. Nothing is written to disk.
 ClipboardWatcher polls the pasteboard change counter and feeds the history.
 """
 
+import logging
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
+
+log = logging.getLogger(__name__)
 
 CAPACITY = 15
 
@@ -104,9 +107,17 @@ class ClipboardWatcher:
             return False
         return self._history.push(text)
 
+    def _tick(self, _timer) -> None:
+        """Timer callback. Must return None: a repeating NSTimer block that
+        returns a value fires once and then silently stops."""
+        try:
+            self.poll()
+        except Exception:
+            log.exception("Clipboard poll failed")
+
     def start(self, interval: float = 0.5) -> None:
         """Poll on the main run loop every *interval* seconds."""
         from AppKit import NSTimer
         self._timer = NSTimer.scheduledTimerWithTimeInterval_repeats_block_(
-            interval, True, lambda _: self.poll()
+            interval, True, self._tick
         )

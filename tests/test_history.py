@@ -121,3 +121,17 @@ def test_row_label_uses_first_line_collapsed_and_truncated():
     long = "x" * 200
     label = row_label(long, copied_at=0, now=0)
     assert label.startswith("x" * 60) and "…" in label and label.endswith("now")
+
+
+def test_timer_tick_returns_none_and_never_raises():
+    # NSTimer block callbacks must return None: a repeating timer whose callback
+    # returns a value fires once and silently stops (observed 2026-09-03).
+    b, h = FakeBoard(), ClipboardHistory()
+    w = b.watcher(h)
+    b.count = 1
+    assert w._tick(None) is None
+    assert len(h) == 1
+    b.count = 2
+    b.read_types_error = True
+    w._read_types = lambda: (_ for _ in ()).throw(RuntimeError("pasteboard busy"))
+    assert w._tick(None) is None  # swallowed and logged, timer keeps running
