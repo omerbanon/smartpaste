@@ -7,7 +7,17 @@ Build with:
     open dist/SmartPaste.app
 """
 
+import importlib.util
+import sys
+
 from setuptools import setup
+
+if sys.version_info < (3, 10):
+    sys.exit(
+        f"SmartPaste requires Python 3.10+ (found {sys.version.split()[0]} at {sys.executable}).\n"
+        "On macOS, `python3` is often Apple's Python 3.9. Create the venv with a newer interpreter, e.g.:\n"
+        "    brew install python@3.12 && python3.12 -m venv .venv"
+    )
 
 APP = ["smartpaste/__main__.py"]
 
@@ -24,27 +34,39 @@ OPTIONS = {
         "LSUIElement": True,  # no Dock icon
         "NSAppleEventsUsageDescription": "SmartPaste needs accessibility access for global hotkeys.",
     },
+    # Top-level packages to bundle whole. Third-party HTTP deps are listed as
+    # candidates because they differ across anthropic versions (0.x pulls in
+    # httpx/httpcore/certifi, 1.x pulls in httpx2/httpcore2/truststore); only
+    # the ones actually installed are included so the build never fails on a
+    # package that isn't there.
     "packages": [
-        "smartpaste",
-        "objc",
-        "AppKit",
-        "Foundation",
-        "WebKit",
-        "Quartz",
-        "quickmachotkey",
-        "anthropic",
-        "httpx",
-        "httpcore",
-        "anyio",
-        "sniffio",
-        "certifi",
-        "idna",
-        "h11",
-        "markdown",
-        "pymdownx",
-        "pygments",
-        "rumps",
-        "dotenv",
+        pkg
+        for pkg in [
+            "smartpaste",
+            "objc",
+            "AppKit",
+            "Foundation",
+            "WebKit",
+            "Quartz",
+            "quickmachotkey",
+            "anthropic",
+            "httpx",
+            "httpx2",
+            "httpcore",
+            "httpcore2",
+            "truststore",
+            "anyio",
+            "sniffio",
+            "certifi",
+            "idna",
+            "h11",
+            "markdown",
+            "pymdownx",
+            "pygments",
+            "rumps",
+            "dotenv",
+        ]
+        if importlib.util.find_spec(pkg) is not None
     ],
     "includes": [
         "html",

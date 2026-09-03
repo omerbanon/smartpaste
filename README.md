@@ -10,7 +10,12 @@ macOS menu bar app that converts clipboard content between formats and rephrases
 # Clone and set up
 git clone https://github.com/omerbanon/smartpaste.git
 cd smartpaste
-python3 -m venv .venv
+
+# Needs Python 3.10+. On macOS, plain `python3` is often Apple's Python 3.9,
+# which builds fine but the app then dies on launch with a py2app "Launch error".
+# py2app also needs a framework build, so use Homebrew (or python.org) Python:
+brew install python@3.12
+python3.12 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 
@@ -110,5 +115,17 @@ python -m smartpaste
 ## Requirements
 
 - macOS 13+
-- Python 3.10+
+- Python 3.10+ as a framework build (Homebrew `python@3.12` or python.org). Apple's bundled Python 3.9 and uv-managed Pythons won't work with py2app.
 - Anthropic API key (for AI features)
+
+## Troubleshooting
+
+**"Launch error – See the py2app website for debugging launch issues"** when opening the app:
+run the binary directly to see the real traceback:
+
+```bash
+/Applications/SmartPaste.app/Contents/MacOS/SmartPaste
+```
+
+If it ends in `TypeError: unsupported operand type(s) for |: 'type' and 'NoneType'`, the app was
+built with Python 3.9. Recreate the venv with Python 3.10+ (see Install) and rebuild.
