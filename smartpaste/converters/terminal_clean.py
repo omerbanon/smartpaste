@@ -11,7 +11,7 @@ from collections import Counter
 from smartpaste.constants import ContentType, TargetFormat
 from smartpaste.converters import register
 from smartpaste.converters.md_to_html import _md_to_html, _strip_html_tags
-from smartpaste.converters.md_to_slack import _md_to_slack_html
+from smartpaste.converters.table_to_formats import code_block
 
 
 def clean_terminal_text(text: str) -> str:
@@ -106,9 +106,9 @@ def terminal_to_gmail(text: str) -> dict[str, str | None]:
 
 @register(ContentType.TERMINAL, TargetFormat.SLACK)
 def terminal_to_slack(text: str) -> dict[str, str | None]:
-    cleaned = clean_terminal_text(text)
-    html = _md_to_slack_html(cleaned)
-    return {"html": html, "plain": cleaned}
+    # Terminal output is not markdown: stray * or # must stay literal, and
+    # column alignment only survives inside a monospace code block.
+    return code_block(clean_terminal_text(text))
 
 
 @register(ContentType.TERMINAL, TargetFormat.CLI)

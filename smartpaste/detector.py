@@ -4,9 +4,7 @@ import json
 import re
 
 from smartpaste.constants import ContentType
-
-# Tab-separated values detection (Google Sheets, Excel copy)
-_TAB_RE = re.compile(r"\t")
+from smartpaste.converters.tabular import is_table
 
 
 def _is_terminal(text: str) -> bool:
@@ -33,21 +31,6 @@ def _is_terminal(text: str) -> bool:
     return ratio > 0.3
 
 
-def _is_tsv(text: str) -> bool:
-    """Detect tab-separated tabular data (copied from spreadsheets).
-
-    Heuristic: at least 2 rows with tabs, and consistent column count.
-    """
-    lines = [l for l in text.strip().splitlines() if l.strip()]
-    if len(lines) < 2:
-        return False
-    tab_counts = [l.count("\t") for l in lines]
-    # Every line must have at least one tab
-    if any(c == 0 for c in tab_counts):
-        return False
-    # Column count should be consistent (allow ±1 for trailing tabs)
-    median = sorted(tab_counts)[len(tab_counts) // 2]
-    return all(abs(c - median) <= 1 for c in tab_counts)
 
 
 # Markdown signals — each pattern, if found, adds 1 to the score.
@@ -111,8 +94,8 @@ def detect(text: str) -> ContentType:
     if _is_terminal(text):
         return ContentType.TERMINAL
 
-    # TSV — spreadsheet data copied from Google Sheets / Excel
-    if _is_tsv(text):
+    # Tab/comma/semicolon-separated data (Sheets, Excel, CSV files)
+    if is_table(text):
         return ContentType.TABLE
 
     # Box-drawing tables (CLI tool output) → treat as MARKDOWN

@@ -14,6 +14,8 @@ import markdown as md
 
 from smartpaste.constants import ContentType, TargetFormat
 from smartpaste.converters import register
+from smartpaste.converters.md_to_html import _prep_markdown_lists
+from smartpaste.converters.tabular import md_pipe_table_to_rows, rows_to_aligned_text
 
 # Extensions — no codehilite (Slack ignores inline styles), no smarty
 _MD_EXTENSIONS = [
@@ -26,7 +28,8 @@ _MD_EXTENSIONS = [
 
 def _md_to_slack_html(text: str) -> str:
     """Convert markdown to clean HTML that Slack's composer understands."""
-    # Pre-process: convert markdown tables to plain text (Slack has no table support)
+    text = _prep_markdown_lists(text)
+    # Pre-process: convert markdown tables to aligned code blocks (Slack has no tables)
     text = _tables_to_text(text)
 
     html = md.markdown(text, extensions=_MD_EXTENSIONS)
@@ -41,32 +44,19 @@ def _md_to_slack_html(text: str) -> str:
 
 
 def _tables_to_text(text: str) -> str:
-    """Convert markdown tables to plain-text representation before HTML conversion."""
+    """Turn markdown tables into fenced code blocks with aligned columns.
+
+    Slack has no table support, but it does keep code blocks monospace, so
+    padded columns inside a code block are the closest thing to a table.
+    """
     def _convert_table(m: re.Match) -> str:
-        block = m.group(0).strip()
-        lines = block.split("\n")
-        rows = []
-        for line in lines:
-            if re.match(r"^\|[\s\-:|]+\|$", line):
-                continue
-            cells = [c.strip() for c in line.strip("|").split("|")]
-            cells = [c for c in cells if c]
-            if cells:
-                rows.append(cells)
+        rows = md_pipe_table_to_rows(m.group(0))
         if not rows:
             return ""
-        # Format as "key: value" for 2-col, comma-join for 3+
-        headers = rows[0]
-        data = rows[1:]
-        if not data:
-            return ", ".join(headers)
-        result = []
-        for row in data:
-            result.append(", ".join(row))
-        return "\n".join(result)
+        return "\n```\n" + rows_to_aligned_text(rows) + "\n```\n"
 
     return re.sub(
-        r"(?:^\|.+\|[ \t]*\n)+",
+        r"(?:^[ \t]*\|.+\|[ \t]*\n?)+",
         _convert_table,
         text,
         flags=re.MULTILINE,
@@ -90,3 +80,8 @@ def md_to_slack(text: str) -> dict[str, str | None]:
     """
     html = _md_to_slack_html(text)
     return {"html": html, "plain": _strip_tags(html)}
+
+
+@register(ContentType.PLAIN_TEXT, TargetFormat.SLACK)
+def plain_to_slack(text: str) -> dict[str, str | None]:
+    return {"html": None, "plain": text}

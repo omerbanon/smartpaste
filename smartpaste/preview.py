@@ -34,6 +34,7 @@ from AppKit import (
 from WebKit import WKWebView, WKWebViewConfiguration
 
 from smartpaste.clipboard import write_clipboard
+from smartpaste.converters.tabular import parse_table, rows_to_html_table
 
 log = logging.getLogger(__name__)
 
@@ -172,35 +173,9 @@ def _preprocess_for_preview(text: str) -> str:
     return "\n".join(result)
 
 
-def _is_tsv(text: str) -> bool:
-    """Quick check if text is tab-separated table data."""
-    lines = [l for l in text.strip().splitlines() if l.strip()]
-    if len(lines) < 2:
-        return False
-    return all("\t" in l for l in lines)
-
-
-def _render_tsv_to_html(text: str) -> str:
-    """Convert tab-separated data to a dark-themed HTML table."""
-    lines = [l for l in text.strip().splitlines() if l.strip()]
-    rows = [l.split("\t") for l in lines]
-
-    parts = ["<table>"]
-    # Header row
-    parts.append("<thead><tr>")
-    for cell in rows[0]:
-        parts.append(f"<th>{html_mod.escape(cell)}</th>")
-    parts.append("</tr></thead>")
-    # Data rows
-    if len(rows) > 1:
-        parts.append("<tbody>")
-        for row in rows[1:]:
-            parts.append("<tr>")
-            for cell in row:
-                parts.append(f"<td>{html_mod.escape(cell)}</td>")
-            parts.append("</tr>")
-        parts.append("</tbody>")
-    parts.append("</table>")
+def _render_table_to_html(rows: list[list[str]]) -> str:
+    """Render parsed table rows as a dark-themed HTML table."""
+    table = rows_to_html_table(rows)
 
     row_count = len(rows) - 1
     col_count = max(len(r) for r in rows)
@@ -209,7 +184,7 @@ def _render_tsv_to_html(text: str) -> str:
     return f"""<!DOCTYPE html>
 <html>
 <head><meta charset="utf-8"><style>{_DARK_CSS}</style></head>
-<body>{"".join(parts)}{subtitle}</body>
+<body>{table}{subtitle}</body>
 </html>"""
 
 
@@ -381,8 +356,9 @@ def _is_terminal(text: str) -> bool:
 
 def _render_to_html(text: str) -> str:
     """Pick the right renderer based on content type."""
-    if _is_tsv(text):
-        return _render_tsv_to_html(text)
+    rows = parse_table(text)
+    if rows:
+        return _render_table_to_html(rows)
     if _is_json(text):
         return _render_json_to_html(text)
     from smartpaste.converters.box_table import has_box_drawing, convert_box_tables_to_markdown

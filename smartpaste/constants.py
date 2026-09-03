@@ -63,6 +63,11 @@ FORMAT_OPTIONS: dict[ContentType, list[TargetFormat]] = {
         TargetFormat.AI_REPHRASE,
     ],
     ContentType.PLAIN_TEXT: [
+        TargetFormat.GOOGLE_DOCS,
+        TargetFormat.GMAIL,
+        TargetFormat.SLACK,
+        TargetFormat.CLI,
+        TargetFormat.PLAIN,
         TargetFormat.AI_REPHRASE,
     ],
 }
