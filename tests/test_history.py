@@ -108,3 +108,16 @@ def test_watcher_skips_non_text():
     w = b.watcher(h)
     b.count = 1; b.text = None; b.types = ["public.png"]
     assert w.poll() is False
+
+
+# --- panel row label ---------------------------------------------------------
+
+from smartpaste.history_panel import row_label
+
+
+def test_row_label_uses_first_line_collapsed_and_truncated():
+    text = "   \n\nName,Age,City\nAlice,30\n"
+    assert row_label(text, copied_at=0, now=120) == "Name,Age,City  ·  2m"
+    long = "x" * 200
+    label = row_label(long, copied_at=0, now=0)
+    assert label.startswith("x" * 60) and "…" in label and label.endswith("now")
