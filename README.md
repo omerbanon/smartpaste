@@ -78,6 +78,8 @@ relaunch; it will be moved the same way.
   "model": "claude-haiku-5-5",
   "hotkey": "cmd+shift+v",
   "auto_paste": false,
+  "keep_history": false,
+  "history_capacity": 15,
   "system_prompt": "You are a text reformatting assistant...",
   "presets": [
     "Fix grammar and spelling",
@@ -96,6 +98,12 @@ never contain clipboard text or AI prompts.
 `hotkey` takes modifiers (`cmd`, `ctrl`, `option`, `shift`) and one key (`a`-`z`, `0`-`9`, `f1`-`f20`,
 `space`), joined with `+`. Cmd+Shift+V is "Paste and Match Style" in Google Docs, Chrome, Slack and
 Notion, so pick another one (Hotkey > Record Shortcut...) if you use that.
+
+Clipboard history (press **L** in the popup) lives in memory and is gone when you quit. Turn on
+**Keep History After Quit** in the menu bar icon to keep it: it's saved in your login Keychain
+(encrypted), never in a plain file. **Clear History** empties both. Passwords copied from password
+managers (marked concealed) and SmartPaste's own writes are never recorded. `history_capacity` sets
+how many items are kept (default 15).
 
 **First launch** opens a setup wizard (API key, system prompt, presets, model choice).
 

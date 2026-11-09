@@ -22,7 +22,7 @@ from smartpaste.config import is_configured, load_config, migrate_api_key_to_key
 from smartpaste.constants import IMAGE_PASTEBOARD_TYPES, ContentType, TargetFormat, format_options
 from smartpaste.converters import convert
 from smartpaste.detector import detect
-from smartpaste.history import ClipboardHistory, ClipboardWatcher
+from smartpaste.history import CAPACITY, ClipboardHistory, ClipboardWatcher, HistoryStore
 from smartpaste.history_panel import HistoryPanel
 from smartpaste.hotkey import PRESET_HOTKEYS, HotkeyManager, format_hotkey
 from smartpaste.hotkey_recorder import HotkeyRecorder
@@ -65,7 +65,16 @@ class SmartPasteApp(rumps.App):
         )
         self._popup = FormatPopup()
         self._toast = Toast()
-        self._history = ClipboardHistory()
+        config = load_config()
+        try:
+            capacity = int(config.get("history_capacity") or CAPACITY)
+        except (TypeError, ValueError):
+            capacity = CAPACITY
+        self._history_store = HistoryStore()
+        self._history = ClipboardHistory(capacity)
+        if config.get("keep_history"):
+            self._history.load(self._history_store.load())
+            self._history.on_change = self._history_store.save
         self._watcher = ClipboardWatcher(self._history)
         self._history_panel = HistoryPanel()
         self._ai_generation = 0  # cancellation counter for in-flight AI requests
@@ -81,6 +90,8 @@ class SmartPasteApp(rumps.App):
         self._auto_paste_item.state = 1 if load_config().get("auto_paste") else 0
 
         self._login_item = rumps.MenuItem("Launch at Login", callback=self._on_toggle_login_item)
+        self._keep_history_item = rumps.MenuItem("Keep History After Quit", callback=self._on_toggle_keep_history)
+        self._keep_history_item.state = 1 if config.get("keep_history") else 0
 
         self.menu = [
             rumps.MenuItem("Settings...", callback=self._on_settings),
@@ -88,8 +99,29 @@ class SmartPasteApp(rumps.App):
             self._auto_paste_item,
             self._login_item,
             None,  # separator
+            self._keep_history_item,
+            rumps.MenuItem("Clear History", callback=self._on_clear_history),
+            None,  # separator
         ]
         self._refresh_login_item()
+
+    def _on_toggle_keep_history(self, sender) -> None:
+        """Off by default. On: history is saved to the Keychain and restored at launch."""
+        enabled = not bool(sender.state)
+        sender.state = 1 if enabled else 0
+        config = load_config()
+        config["keep_history"] = enabled
+        save_config(config)
+        if enabled:
+            self._history.on_change = self._history_store.save
+            self._history_store.save(self._history)
+        else:
+            self._history.on_change = None
+            self._history_store.delete()
+
+    def _on_clear_history(self, _sender) -> None:
+        self._history.clear()  # also clears the saved copy when Keep History is on
+        self._toast.show("Clipboard history cleared", icon=TOAST_ICON_INFO)
 
     def _refresh_login_item(self) -> None:
         from smartpaste import login_item

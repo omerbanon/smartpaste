@@ -135,3 +135,42 @@ def test_timer_tick_returns_none_and_never_raises():
     b.read_types_error = True
     w._read_types = lambda: (_ for _ in ()).throw(RuntimeError("pasteboard busy"))
     assert w._tick(None) is None  # swallowed and logged, timer keeps running
+
+
+def test_on_change_fires_for_mutations():
+    from smartpaste.history import ClipboardHistory
+
+    calls = []
+    h = ClipboardHistory(capacity=3, on_change=lambda hist: calls.append(len(hist)))
+    h.push("a", now=1)
+    h.push("b", now=2)
+    h.touch(1)
+    h.remove(0)
+    h.clear()
+    assert calls == [1, 2, 2, 1, 0]
+    h.push("   ")  # skipped, no change
+    assert calls == [1, 2, 2, 1, 0]
+
+
+def test_store_round_trip_and_capacity():
+    from smartpaste.history import ClipboardHistory, HistoryStore
+
+    saved = {}
+    store = HistoryStore(get=lambda: saved.get("raw"), put=lambda raw: saved.update(raw=raw) or True,
+                         delete=lambda: saved.pop("raw", None))
+    h = ClipboardHistory(capacity=5, on_change=store.save)
+    for i in range(4):
+        h.push(f"item {i} ✓", now=100 + i)
+    restored = ClipboardHistory(capacity=2)
+    restored.load(store.load())
+    assert [i.text for i in restored.items()] == ["item 3 ✓", "item 2 ✓"]
+    store.delete()
+    assert store.load() == []
+
+
+def test_dump_drops_oldest_past_size_limit():
+    from smartpaste.history import HistoryItem, dump_items, parse_items
+
+    items = [HistoryItem("x" * 600, 3), HistoryItem("y" * 600, 2)]
+    assert [i.copied_at for i in parse_items(dump_items(items, max_bytes=1000))] == [3]
+    assert parse_items("not json") == []
