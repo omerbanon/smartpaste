@@ -17,10 +17,9 @@ cd smartpaste
 brew install python@3.12
 python3.12 -m venv .venv
 source .venv/bin/activate
-pip install -r requirements.txt
+pip install -e ".[dev]"   # runtime deps + pytest, ruff, py2app, Pillow
 
 # Build the app
-pip install py2app Pillow
 python setup.py py2app
 
 # Install
@@ -111,6 +110,16 @@ cd smartpaste
 source .venv/bin/activate
 python -m smartpaste
 ```
+
+Tests and lint:
+
+```bash
+pytest
+ruff check .
+```
+
+The version lives in one place, `smartpaste/__init__.py` (`__version__`). `setup.py` and
+`pyproject.toml` both read it. Bump it there, then tag the release (`git tag v0.3.0`).
 
 ## Requirements
 

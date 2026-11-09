@@ -1,14 +1,16 @@
 """py2app build configuration for SmartPaste.app.
 
 Build with:
-    pip install py2app
+    pip install -r requirements.txt py2app Pillow   (or: pip install ".[dev]")
     rm -rf build dist
     python setup.py py2app
     open dist/SmartPaste.app
 """
 
 import importlib.util
+import re
 import sys
+from pathlib import Path
 
 from setuptools import setup
 
@@ -21,6 +23,11 @@ if sys.version_info < (3, 10):
 
 APP = ["smartpaste/__main__.py"]
 
+# Single source of truth for the version: smartpaste/__init__.py
+VERSION = re.search(
+    r'^__version__ = "([^"]+)"', (Path(__file__).parent / "smartpaste" / "__init__.py").read_text(), re.M
+).group(1)
+
 DATA_FILES = []
 
 OPTIONS = {
@@ -29,8 +36,8 @@ OPTIONS = {
         "CFBundleName": "SmartPaste",
         "CFBundleDisplayName": "SmartPaste",
         "CFBundleIdentifier": "com.smartpaste.app",
-        "CFBundleVersion": "0.1.0",
-        "CFBundleShortVersionString": "0.1.0",
+        "CFBundleVersion": VERSION,
+        "CFBundleShortVersionString": VERSION,
         "LSUIElement": True,  # no Dock icon
         "NSAppleEventsUsageDescription": "SmartPaste needs accessibility access for global hotkeys.",
     },
@@ -64,7 +71,6 @@ OPTIONS = {
             "pymdownx",
             "pygments",
             "rumps",
-            "dotenv",
         ]
         if importlib.util.find_spec(pkg) is not None
     ],
@@ -95,10 +101,28 @@ OPTIONS = {
     ],
 }
 
+
+
+def _py2app_cmdclass() -> dict:
+    """py2app refuses to run when install_requires is set, and setuptools fills it
+    from [project.dependencies] in pyproject.toml. The app bundles whatever is
+    installed in the venv, so drop the list before py2app checks it."""
+    try:
+        from py2app.build_app import py2app as _py2app
+    except ImportError:  # plain `pip install .` without py2app
+        return {}
+
+    class py2app(_py2app):
+        def finalize_options(self):
+            self.distribution.install_requires = []
+            super().finalize_options()
+
+    return {"py2app": py2app}
+
+
 setup(
     app=APP,
-    name="SmartPaste",
     data_files=DATA_FILES,
     options={"py2app": OPTIONS},
-    setup_requires=["py2app"],
+    cmdclass=_py2app_cmdclass(),
 )
