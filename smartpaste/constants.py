@@ -18,6 +18,7 @@ class TargetFormat(Enum):
     GOOGLE_DOCS = "G-Doc / Confluence / Jira"
     GMAIL = "Gmail"
     SLACK = "Slack"
+    NOTION = "Notion"
     CLI = "CLI (Compact)"
     PLAIN = "Plain Text"
     AI_REPHRASE = "Reformat with AI"
@@ -36,6 +37,7 @@ FORMAT_OPTIONS: dict[ContentType, list[TargetFormat]] = {
         TargetFormat.GOOGLE_DOCS,
         TargetFormat.GMAIL,
         TargetFormat.SLACK,
+        TargetFormat.NOTION,
         TargetFormat.CLI,
         TargetFormat.PLAIN,
         TargetFormat.AI_REPHRASE,

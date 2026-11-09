@@ -159,6 +159,7 @@ FORMAT_ICONS: dict[TargetFormat, str] = {
     TargetFormat.GOOGLE_DOCS: "\U0001F4DD",   # memo
     TargetFormat.GMAIL: "\U0001F4E8",          # incoming envelope (colorful)
     TargetFormat.SLACK: "\U0001F4AC",          # speech bubble
+    TargetFormat.NOTION: "\U0001F5D2",         # spiral notepad
     TargetFormat.CLI: "\U0001F4BB",             # laptop (terminal)
     TargetFormat.PLAIN: "\U0001F4CB",          # clipboard
     TargetFormat.AI_REPHRASE: "\U0001F9E0",   # brain
@@ -1057,8 +1058,8 @@ class FormatPopup:
             self._on_button_click(self._selected_index)
             return None
 
-        # Number keys 1-6 for quick pick (keycodes 18-23 map to 1-6)
-        number_keycodes = {18: 0, 19: 1, 20: 2, 21: 3, 23: 4, 22: 5}  # 1,2,3,4,5,6
+        # Number keys 1-9 for quick pick (macOS ANSI keycodes for 1..9)
+        number_keycodes = {18: 0, 19: 1, 20: 2, 21: 3, 23: 4, 22: 5, 26: 6, 28: 7, 25: 8}
         if keycode in number_keycodes:
             idx = number_keycodes[keycode]
             if idx < len(self._formats):
