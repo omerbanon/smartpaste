@@ -36,6 +36,8 @@ SmartPaste lives in the menu bar (CmdV icon, top-right of screen).
 1. Copy any text
 2. Press **Cmd+Shift+V** (or your own hotkey)
 3. Pick a format or press **A** for AI rephrase
+4. Press **Cmd+V** in your app. Or turn on **Paste Automatically** in the menu bar icon and SmartPaste
+   pastes for you after you pick a format (needs Accessibility permission).
 
 ### Format Options
 
@@ -70,6 +72,7 @@ relaunch; it will be moved the same way.
 {
   "model": "claude-haiku-5-5",
   "hotkey": "cmd+shift+v",
+  "auto_paste": false,
   "system_prompt": "You are a text reformatting assistant...",
   "presets": [
     "Fix grammar and spelling",

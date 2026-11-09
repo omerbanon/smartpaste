@@ -13,7 +13,7 @@ import threading
 from pathlib import Path
 
 import rumps
-from AppKit import NSApplication, NSImage
+from AppKit import NSApplication, NSImage, NSTimer
 from Foundation import NSObject
 from PyObjCTools.AppHelper import callAfter
 
@@ -77,11 +77,30 @@ class SmartPasteApp(rumps.App):
         self._hotkey_menu = rumps.MenuItem("Hotkey")
 
         # Menu items
+        self._auto_paste_item = rumps.MenuItem("Paste Automatically", callback=self._on_toggle_auto_paste)
+        self._auto_paste_item.state = 1 if load_config().get("auto_paste") else 0
+
         self.menu = [
             rumps.MenuItem("Settings...", callback=self._on_settings),
             self._hotkey_menu,
+            self._auto_paste_item,
             None,  # separator
         ]
+
+    def _on_toggle_auto_paste(self, sender) -> None:
+        """Off by default: after picking a format, also send Cmd+V to the previous app."""
+        enabled = not bool(sender.state)
+        sender.state = 1 if enabled else 0
+        config = load_config()
+        config["auto_paste"] = enabled
+        save_config(config)
+        if enabled:
+            from smartpaste.autopaste import accessibility_trusted
+
+            if not accessibility_trusted():
+                self._toast.show(
+                    "Grant Accessibility in System Settings for auto-paste", icon=TOAST_ICON_WARNING, duration=3.0
+                )
 
     # ------------------------------------------------------------------
     # Hotkey
@@ -180,8 +199,21 @@ class SmartPasteApp(rumps.App):
 
         result = convert(content_type, target_format, text)
         write_clipboard(html=result.get("html"), plain=result.get("plain"))
-
         log.info("Clipboard updated. Ready to paste.")
+
+        if load_config().get("auto_paste"):
+            from smartpaste.autopaste import PASTE_DELAY, accessibility_trusted, post_cmd_v
+
+            if accessibility_trusted():
+                # The popup just hid; give the previous app a moment to take focus back
+                NSTimer.scheduledTimerWithTimeInterval_repeats_block_(PASTE_DELAY, False, lambda _: post_cmd_v())
+                self._toast.show(f"Pasted as {target_format.value}", icon=TOAST_ICON_SUCCESS)
+                return
+            self._toast.show(
+                "Auto-paste needs Accessibility permission — Cmd+V to paste", icon=TOAST_ICON_WARNING, duration=3.0
+            )
+            return
+
         self._toast.show(f"Converted to {target_format.value} — Cmd+V to paste", icon=TOAST_ICON_SUCCESS)
 
     def _on_ai_rephrase(self, text: str, prompt: str) -> None:
