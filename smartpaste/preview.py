@@ -14,7 +14,6 @@ import objc
 import markdown as md
 from AppKit import (
     NSAnimationContext,
-    NSApplication,
     NSAppearance,
     NSBackingStoreBuffered,
     NSBezierPath,

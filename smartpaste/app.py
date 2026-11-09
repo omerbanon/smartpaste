@@ -13,8 +13,7 @@ import threading
 from pathlib import Path
 
 import rumps
-from AppKit import NSApplication, NSImage, NSTimer
-from Foundation import NSObject
+from AppKit import NSApplication, NSTimer
 from PyObjCTools.AppHelper import callAfter
 
 from smartpaste.clipboard import read_clipboard_html, read_clipboard_string, read_clipboard_types, write_clipboard

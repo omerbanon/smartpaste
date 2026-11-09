@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - name: Install
+        run: pip install -e ".[dev]"
+      - name: Lint
+        run: ruff check .
+      - name: Test
+        run: pytest -q
+
+  build:
+    # Catches packaging breaks (like the py2app "Launch error" fixed in #2).
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - name: Install
+        run: pip install -r requirements.txt py2app Pillow
+      - name: Build SmartPaste.app
+        run: python setup.py py2app
+      - name: Check the bundle
+        run: |
+          test -x dist/SmartPaste.app/Contents/MacOS/SmartPaste
+          /usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" dist/SmartPaste.app/Contents/Info.plist

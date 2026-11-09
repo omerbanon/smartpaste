@@ -31,12 +31,11 @@ from AppKit import (
     NSTrackingActiveAlways,
     NSTrackingArea,
     NSTrackingMouseEnteredAndExited,
-    NSTrackingMouseMoved,
     NSView,
     NSVisualEffectView,
     NSWindowStyleMaskBorderless,
 )
-from AppKit import NSAppearance, NSCenterTextAlignment, NSTimer
+from AppKit import NSAppearance, NSTimer
 from Foundation import NSObject
 
 from WebKit import WKWebView, WKWebViewConfiguration
