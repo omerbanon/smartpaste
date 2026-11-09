@@ -17,9 +17,9 @@ from AppKit import NSApplication, NSImage
 from Foundation import NSObject
 from PyObjCTools.AppHelper import callAfter
 
-from smartpaste.clipboard import read_clipboard_string, write_clipboard
+from smartpaste.clipboard import read_clipboard_string, read_clipboard_types, write_clipboard
 from smartpaste.config import is_configured, load_config
-from smartpaste.constants import ContentType, TargetFormat
+from smartpaste.constants import IMAGE_PASTEBOARD_TYPES, ContentType, TargetFormat
 from smartpaste.converters import convert
 from smartpaste.detector import detect
 from smartpaste.history import ClipboardHistory, ClipboardWatcher
@@ -88,6 +88,10 @@ class SmartPasteApp(rumps.App):
 
         text = read_clipboard_string()
         if not text:
+            if any(t in IMAGE_PASTEBOARD_TYPES for t in read_clipboard_types()):
+                log.info("Clipboard holds an image, no text")
+                self._toast.show("Clipboard has an image. SmartPaste converts text only", icon=TOAST_ICON_INFO)
+                return
             log.info("Clipboard is empty or has no text, ignoring")
             self._toast.show("No text on clipboard", icon=TOAST_ICON_WARNING)
             return

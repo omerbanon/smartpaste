@@ -11,7 +11,6 @@ class ContentType(Enum):
     TABLE = auto()
     TERMINAL = auto()
     PLAIN_TEXT = auto()
-    IMAGE = auto()
 
 
 class TargetFormat(Enum):
@@ -30,6 +29,7 @@ PASTEBOARD_TYPE_PLAIN = "public.utf8-plain-text"
 PASTEBOARD_TYPE_RTF = "public.rtf"
 PASTEBOARD_TYPE_PNG = "public.png"
 PASTEBOARD_TYPE_TIFF = "public.tiff"
+IMAGE_PASTEBOARD_TYPES = (PASTEBOARD_TYPE_PNG, PASTEBOARD_TYPE_TIFF)
 
 # Maps ContentType → list of TargetFormats shown in the popup
 FORMAT_OPTIONS: dict[ContentType, list[TargetFormat]] = {
@@ -93,5 +93,4 @@ CONTENT_TYPE_LABELS: dict[ContentType, str] = {
     ContentType.TABLE: "Table Detected",
     ContentType.TERMINAL: "Terminal Text Detected",
     ContentType.PLAIN_TEXT: "Plain Text",
-    ContentType.IMAGE: "Image Detected",
 }
