@@ -997,7 +997,7 @@ class FormatPopup:
         if not prompt:
             return
 
-        log.info("AI prompt submitted: %r", prompt)
+        log.info("AI prompt submitted (%d chars)", len(prompt))
         if self._ai_callback:
             self._ai_callback(prompt)
 

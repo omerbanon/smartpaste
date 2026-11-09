@@ -77,6 +77,9 @@ All settings are stored in `~/.smartpaste/config.json`. Edit directly or use **S
 }
 ```
 
+Set `"debug": true` (or run with `SMARTPASTE_DEBUG=1`) for verbose logs. Logs default to INFO and
+never contain clipboard text or AI prompts.
+
 **First launch** opens a setup wizard (API key, system prompt, presets, model choice).
 
 ### Available Models

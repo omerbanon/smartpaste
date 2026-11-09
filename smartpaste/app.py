@@ -7,6 +7,7 @@ for global hotkey capture.
 """
 
 import logging
+import os
 import sys
 import threading
 from pathlib import Path
@@ -17,7 +18,7 @@ from Foundation import NSObject
 from PyObjCTools.AppHelper import callAfter
 
 from smartpaste.clipboard import read_clipboard_string, write_clipboard
-from smartpaste.config import is_configured
+from smartpaste.config import is_configured, load_config
 from smartpaste.constants import ContentType, TargetFormat
 from smartpaste.converters import convert
 from smartpaste.detector import detect
@@ -27,8 +28,22 @@ from smartpaste.hotkey import register_hotkey
 from smartpaste.onboarding import OnboardingWindow
 from smartpaste.popup import FormatPopup, Toast, TOAST_ICON_SUCCESS, TOAST_ICON_WARNING, TOAST_ICON_INFO
 
+
+
+def _log_level() -> int:
+    """INFO by default. DEBUG when SMARTPASTE_DEBUG=1 or config.json has "debug": true.
+
+    Log lines never include clipboard text or AI prompts, only sizes and types.
+    """
+    if os.environ.get("SMARTPASTE_DEBUG", "").strip().lower() in ("1", "true", "yes"):
+        return logging.DEBUG
+    if load_config().get("debug") is True:
+        return logging.DEBUG
+    return logging.INFO
+
+
 logging.basicConfig(
-    level=logging.DEBUG,
+    level=_log_level(),
     format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
     stream=sys.stderr,
 )

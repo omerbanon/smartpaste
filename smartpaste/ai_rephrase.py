@@ -56,7 +56,7 @@ def rephrase(prompt: str, text: str) -> str:
 
     user_message = f"Instruction: {prompt}\n\nText:\n{text}"
 
-    log.info("AI rephrase: sending request (model=%s, prompt=%r)", model, prompt)
+    log.info("AI rephrase: sending request (model=%s, %d chars of text)", model, len(text))
     response = client.messages.create(
         model=model,
         max_tokens=4096,
