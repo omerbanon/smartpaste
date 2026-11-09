@@ -2,11 +2,17 @@
 
 All defaults live here so the rest of the app can import them.
 Config is re-read on each AI call so edits take effect immediately.
+
+The API key is not stored in config.json. It lives in the macOS Keychain
+(keychain.py): load_config() never returns it, get_api_key() reads it, and
+save_config() moves an "api_key" entry into the Keychain.
 """
 
 import json
 import logging
 from pathlib import Path
+
+from smartpaste import keychain
 
 log = logging.getLogger(__name__)
 
@@ -69,46 +75,79 @@ def fetch_models(api_key: str, timeout: float = 10.0) -> dict[str, str]:
         return {}
 
 _DEFAULTS: dict = {
-    "api_key": "",
     "model": DEFAULT_MODEL,
     "system_prompt": DEFAULT_SYSTEM_PROMPT,
     "presets": DEFAULT_PRESETS,
 }
 
 
+def _read_file() -> dict:
+    if not CONFIG_FILE.exists():
+        return {}
+    try:
+        with open(CONFIG_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else {}
+    except (json.JSONDecodeError, OSError) as exc:
+        log.warning("Failed to read config file, using defaults: %s", exc)
+        return {}
+
+
+def _write_file(data: dict) -> None:
+    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+    with open(CONFIG_FILE, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2, ensure_ascii=False)
+
+
 def load_config() -> dict:
-    """Read config JSON, merging with defaults for any missing keys."""
+    """Read config JSON, merged with defaults for any missing keys. Never includes the API key."""
     config = dict(_DEFAULTS)
-    if CONFIG_FILE.exists():
-        try:
-            with open(CONFIG_FILE, "r", encoding="utf-8") as f:
-                saved = json.load(f)
-            config.update(saved)
-        except (json.JSONDecodeError, OSError) as exc:
-            log.warning("Failed to read config file, using defaults: %s", exc)
+    config.update(_read_file())
+    config.pop("api_key", None)
     return config
 
 
 def save_config(config: dict) -> None:
-    """Write config dict to JSON, creating ~/.smartpaste/ if needed."""
-    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-    with open(CONFIG_FILE, "w", encoding="utf-8") as f:
-        json.dump(config, f, indent=2, ensure_ascii=False)
+    """Write config to JSON, creating ~/.smartpaste/ if needed.
+
+    An "api_key" entry is stored in the Keychain (or removed from it when
+    empty) and kept out of the file. If the Keychain refuses the write, the
+    key stays in the file so the app keeps working, and a warning is logged.
+    """
+    data = dict(config)
+    if "api_key" in data:
+        key = str(data.pop("api_key") or "").strip()
+        if not key:
+            keychain.delete_secret()
+        elif not keychain.set_secret(key):
+            log.warning("Keychain unavailable; keeping the API key in %s", CONFIG_FILE)
+            data["api_key"] = key
+    _write_file(data)
     log.info("Config saved to %s", CONFIG_FILE)
 
 
 def get_api_key() -> str:
-    """The saved Anthropic API key, or "" if none."""
-    return str(load_config().get("api_key") or "").strip()
+    """The Anthropic API key from the Keychain (or a not-yet-migrated config.json), or ""."""
+    key = keychain.get_secret()
+    if key:
+        return key.strip()
+    return str(_read_file().get("api_key") or "").strip()
+
+
+def migrate_api_key_to_keychain() -> None:
+    """Move a plain-text api_key from config.json into the Keychain (run once at startup)."""
+    data = _read_file()
+    key = str(data.get("api_key") or "").strip()
+    if "api_key" not in data:
+        return
+    if key and not keychain.set_secret(key):
+        log.warning("Could not move the API key to the Keychain; leaving it in config.json")
+        return
+    data.pop("api_key")
+    _write_file(data)
+    log.info("Moved the API key from config.json to the Keychain")
 
 
 def is_configured() -> bool:
-    """Return True if config file exists and has a non-empty API key."""
-    if not CONFIG_FILE.exists():
-        return False
-    try:
-        with open(CONFIG_FILE, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        return bool(data.get("api_key", "").strip())
-    except (json.JSONDecodeError, OSError):
-        return False
+    """Return True if an API key is available."""
+    return bool(get_api_key())

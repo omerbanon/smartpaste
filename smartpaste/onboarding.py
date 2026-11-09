@@ -48,6 +48,7 @@ from smartpaste.config import (
     DEFAULT_PRESETS,
     DEFAULT_SYSTEM_PROMPT,
     fetch_models,
+    get_api_key,
     load_config,
     model_choices,
     save_config,
@@ -168,6 +169,7 @@ class OnboardingWindow:
         self._window = window
         self._current_step = 0
         self._config = load_config()  # refresh
+        self._config["api_key"] = get_api_key()  # Keychain; saved back by save_config()
         self._build_step()
 
         NSApplication.sharedApplication().activateIgnoringOtherApps_(True)

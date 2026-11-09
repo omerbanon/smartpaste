@@ -59,11 +59,15 @@ Detects content type automatically (Markdown, Code, Table, Terminal, Plain Text)
 
 ## Config
 
-All settings are stored in `~/.smartpaste/config.json`. Edit directly or use **Settings...** from the menu bar icon.
+Settings are stored in `~/.smartpaste/config.json`. Edit directly or use **Settings...** from the menu bar icon.
+
+The Anthropic API key is **not** in that file: it's saved in your login Keychain (item
+`com.smartpaste.app`, viewable in Keychain Access). A key left in `config.json` by an older version
+is moved to the Keychain on the next launch. To set it by hand, add `"api_key"` to the file and
+relaunch; it will be moved the same way.
 
 ```json
 {
-  "api_key": "sk-ant-api03-...",
   "model": "claude-haiku-5-5",
   "system_prompt": "You are a text reformatting assistant...",
   "presets": [

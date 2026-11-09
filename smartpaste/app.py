@@ -18,7 +18,7 @@ from Foundation import NSObject
 from PyObjCTools.AppHelper import callAfter
 
 from smartpaste.clipboard import read_clipboard_string, read_clipboard_types, write_clipboard
-from smartpaste.config import is_configured, load_config
+from smartpaste.config import is_configured, load_config, migrate_api_key_to_keychain
 from smartpaste.constants import IMAGE_PASTEBOARD_TYPES, ContentType, TargetFormat
 from smartpaste.converters import convert
 from smartpaste.detector import detect
@@ -243,6 +243,7 @@ def main():
     # Accessory policy = no Dock icon, activates on CURRENT Space (no Space switching)
     NSApplication.sharedApplication().setActivationPolicy_(1)  # NSApplicationActivationPolicyAccessory
 
+    migrate_api_key_to_keychain()
     app = SmartPasteApp()
     register_hotkey(app._on_hotkey)
     app._watcher.start()
