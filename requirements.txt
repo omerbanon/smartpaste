@@ -4,6 +4,7 @@ pyobjc-framework-Cocoa>=10.0
 pyobjc-framework-Quartz>=10.0
 pyobjc-framework-WebKit>=10.0
 pyobjc-framework-Security>=10.0
+pyobjc-framework-ServiceManagement>=10.0
 quickmachotkey>=0.0.2
 markdown>=3.5
 Pygments>=2.17

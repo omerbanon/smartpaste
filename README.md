@@ -29,6 +29,9 @@ open /Applications/SmartPaste.app
 
 Grant **Accessibility** permission when prompted (System Settings > Privacy & Security > Accessibility).
 
+To start SmartPaste when you log in, turn on **Launch at Login** in the menu bar icon (or in the setup
+wizard). This works in the installed app, not when running from source.
+
 ## Usage
 
 SmartPaste lives in the menu bar (CmdV icon, top-right of screen).

@@ -91,7 +91,7 @@ def _ensure_edit_menu() -> None:
 
 
 WIN_W = 520
-WIN_H = 400
+WIN_H = 436
 PAD = 24
 BTN_W = 90
 BTN_H = 32
@@ -137,6 +137,7 @@ class OnboardingWindow:
         self._preset_checks: list[tuple[NSButton, str]] = []
         self._custom_field: NSTextField | None = None
         self._model_popup: NSPopUpButton | None = None
+        self._login_check: NSButton | None = None
 
     # ------------------------------------------------------------------
     # Public
@@ -191,6 +192,7 @@ class OnboardingWindow:
         self._container = container
         self._targets = []
         self._model_popup = None
+        self._login_check = None
 
         if self._current_step == 0:
             self._build_step1(container)
@@ -460,6 +462,22 @@ class OnboardingWindow:
                     callAfter(self._on_models_fetched, fetched)
             threading.Thread(target=_worker, daemon=True).start()
 
+        # Launch at Login (system setting, applied on Done)
+        from smartpaste import login_item
+
+        y -= 34
+        login_cb = NSButton.alloc().initWithFrame_(NSMakeRect(PAD, y, WIN_W - PAD * 2, 20))
+        login_cb.setButtonType_(NSSwitchButton)
+        login_cb.setFont_(NSFont.systemFontOfSize_(12.5))
+        if login_item.is_available():
+            login_cb.setTitle_("Launch SmartPaste at login")
+            login_cb.setState_(NSOnState if login_item.is_enabled() else NSOffState)
+        else:
+            login_cb.setTitle_("Launch at login (available in the installed app)")
+            login_cb.setEnabled_(False)
+        container.addSubview_(login_cb)
+        self._login_check = login_cb
+
         self._add_step_indicator(container, 2)
         self._add_nav_buttons(container, show_back=True, next_label="Done")
 
@@ -497,10 +515,21 @@ class OnboardingWindow:
         else:
             # Done — save config and close
             save_config(self._config)
+            self._apply_login_item()
             self._window.orderOut_(None)
             self._window = None
             if self._on_complete:
                 self._on_complete()
+
+    def _apply_login_item(self) -> None:
+        from smartpaste import login_item
+
+        check = self._login_check
+        if check is None or not login_item.is_available():
+            return
+        wanted = check.state() == NSOnState
+        if wanted != login_item.is_enabled():
+            login_item.set_enabled(wanted)
 
     def _go_back(self) -> None:
         self._save_step_data()

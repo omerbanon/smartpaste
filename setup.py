@@ -56,6 +56,7 @@ OPTIONS = {
             "WebKit",
             "Quartz",
             "Security",
+            "ServiceManagement",
             "quickmachotkey",
             "anthropic",
             "httpx",

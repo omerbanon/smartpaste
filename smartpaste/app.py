@@ -80,12 +80,29 @@ class SmartPasteApp(rumps.App):
         self._auto_paste_item = rumps.MenuItem("Paste Automatically", callback=self._on_toggle_auto_paste)
         self._auto_paste_item.state = 1 if load_config().get("auto_paste") else 0
 
+        self._login_item = rumps.MenuItem("Launch at Login", callback=self._on_toggle_login_item)
+
         self.menu = [
             rumps.MenuItem("Settings...", callback=self._on_settings),
             self._hotkey_menu,
             self._auto_paste_item,
+            self._login_item,
             None,  # separator
         ]
+        self._refresh_login_item()
+
+    def _refresh_login_item(self) -> None:
+        from smartpaste import login_item
+
+        self._login_item.state = 1 if login_item.is_enabled() else 0
+
+    def _on_toggle_login_item(self, sender) -> None:
+        from smartpaste import login_item
+
+        error = login_item.set_enabled(not bool(sender.state))
+        self._refresh_login_item()
+        if error:
+            self._toast.show(error, icon=TOAST_ICON_WARNING, duration=3.0)
 
     def _on_toggle_auto_paste(self, sender) -> None:
         """Off by default: after picking a format, also send Cmd+V to the previous app."""
@@ -143,7 +160,7 @@ class SmartPasteApp(rumps.App):
 
     def _on_settings(self, _sender):
         """Open the onboarding wizard pre-filled with current config."""
-        self._onboarding = OnboardingWindow()
+        self._onboarding = OnboardingWindow(on_complete=self._refresh_login_item)
         self._onboarding.show()
 
     def _on_hotkey(self) -> None:
@@ -352,7 +369,7 @@ def main():
 
 def _show_initial_onboarding(app: SmartPasteApp) -> None:
     """Show the onboarding wizard for first-time setup."""
-    app._onboarding = OnboardingWindow()
+    app._onboarding = OnboardingWindow(on_complete=app._refresh_login_item)
     app._onboarding.show()
 
 
