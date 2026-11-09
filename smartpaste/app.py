@@ -18,13 +18,14 @@ from Foundation import NSObject
 from PyObjCTools.AppHelper import callAfter
 
 from smartpaste.clipboard import read_clipboard_string, read_clipboard_types, write_clipboard
-from smartpaste.config import is_configured, load_config, migrate_api_key_to_keychain
+from smartpaste.config import is_configured, load_config, migrate_api_key_to_keychain, save_config
 from smartpaste.constants import IMAGE_PASTEBOARD_TYPES, ContentType, TargetFormat
 from smartpaste.converters import convert
 from smartpaste.detector import detect
 from smartpaste.history import ClipboardHistory, ClipboardWatcher
 from smartpaste.history_panel import HistoryPanel
-from smartpaste.hotkey import register_hotkey
+from smartpaste.hotkey import PRESET_HOTKEYS, HotkeyManager, format_hotkey
+from smartpaste.hotkey_recorder import HotkeyRecorder
 from smartpaste.onboarding import OnboardingWindow
 from smartpaste.popup import FormatPopup, Toast, TOAST_ICON_SUCCESS, TOAST_ICON_WARNING, TOAST_ICON_INFO
 
@@ -71,11 +72,55 @@ class SmartPasteApp(rumps.App):
         self._ai_streaming = False  # True once streamed text is showing in the preview
         self._onboarding: OnboardingWindow | None = None
 
+        self._hotkeys = HotkeyManager(self._on_hotkey)
+        self._recorder = HotkeyRecorder()
+        self._hotkey_menu = rumps.MenuItem("Hotkey")
+
         # Menu items
         self.menu = [
             rumps.MenuItem("Settings...", callback=self._on_settings),
+            self._hotkey_menu,
             None,  # separator
         ]
+
+    # ------------------------------------------------------------------
+    # Hotkey
+    # ------------------------------------------------------------------
+
+    def apply_hotkey(self, spec: str | None) -> None:
+        """Register *spec* globally and refresh the Hotkey submenu."""
+        spec = self._hotkeys.register(spec)
+        menu = self._hotkey_menu
+        if len(menu):
+            menu.clear()
+        options = list(PRESET_HOTKEYS)
+        if spec not in options:
+            options.append(spec)
+        for option in options:
+            label = format_hotkey(option) + ("  (default)" if option == PRESET_HOTKEYS[0] else "")
+            item = rumps.MenuItem(label, callback=lambda _s, o=option: self._set_hotkey(o))
+            item.state = 1 if option == spec else 0
+            menu.add(item)
+        menu.add(None)
+        menu.add(rumps.MenuItem("Record Shortcut...", callback=self._on_record_hotkey))
+
+    def _set_hotkey(self, spec: str) -> None:
+        self.apply_hotkey(spec)
+        config = load_config()
+        config["hotkey"] = self._hotkeys.spec
+        save_config(config)
+        self._toast.show(f"Hotkey is now {format_hotkey(self._hotkeys.spec)}", icon=TOAST_ICON_SUCCESS)
+
+    def _on_record_hotkey(self, _sender) -> None:
+        self._hotkeys.suspend()
+
+        def _done(spec: str | None) -> None:
+            if spec:
+                self._set_hotkey(spec)
+            else:
+                self._hotkeys.resume()
+
+        self._recorder.show(_done)
 
     def _on_settings(self, _sender):
         """Open the onboarding wizard pre-filled with current config."""
@@ -83,7 +128,7 @@ class SmartPasteApp(rumps.App):
         self._onboarding.show()
 
     def _on_hotkey(self) -> None:
-        """Called when Cmd+Shift+V is pressed."""
+        """Called when the global hotkey (Cmd+Shift+V by default) is pressed."""
         log.info("Hotkey activated")
 
         text = read_clipboard_string()
@@ -245,7 +290,7 @@ def main():
 
     migrate_api_key_to_keychain()
     app = SmartPasteApp()
-    register_hotkey(app._on_hotkey)
+    app.apply_hotkey(load_config().get("hotkey"))
     app._watcher.start()
 
     # Show onboarding wizard on first launch (no config file or no API key)

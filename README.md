@@ -2,7 +2,7 @@
 
 macOS menu bar app that converts clipboard content between formats and rephrases text with AI.
 
-**Cmd+Shift+V** to activate.
+**Cmd+Shift+V** to activate (change it from the menu bar icon > **Hotkey**).
 
 ## Install
 
@@ -34,7 +34,7 @@ Grant **Accessibility** permission when prompted (System Settings > Privacy & Se
 SmartPaste lives in the menu bar (CmdV icon, top-right of screen).
 
 1. Copy any text
-2. Press **Cmd+Shift+V**
+2. Press **Cmd+Shift+V** (or your own hotkey)
 3. Pick a format or press **A** for AI rephrase
 
 ### Format Options
@@ -69,6 +69,7 @@ relaunch; it will be moved the same way.
 ```json
 {
   "model": "claude-haiku-5-5",
+  "hotkey": "cmd+shift+v",
   "system_prompt": "You are a text reformatting assistant...",
   "presets": [
     "Fix grammar and spelling",
@@ -83,6 +84,10 @@ relaunch; it will be moved the same way.
 
 Set `"debug": true` (or run with `SMARTPASTE_DEBUG=1`) for verbose logs. Logs default to INFO and
 never contain clipboard text or AI prompts.
+
+`hotkey` takes modifiers (`cmd`, `ctrl`, `option`, `shift`) and one key (`a`-`z`, `0`-`9`, `f1`-`f20`,
+`space`), joined with `+`. Cmd+Shift+V is "Paste and Match Style" in Google Docs, Chrome, Slack and
+Notion, so pick another one (Hotkey > Record Shortcut...) if you use that.
 
 **First launch** opens a setup wizard (API key, system prompt, presets, model choice).
 
