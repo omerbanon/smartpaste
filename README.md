@@ -46,7 +46,9 @@ Detects content type automatically (Markdown, Code, Table, Terminal, Plain Text)
 - **Google Docs / Confluence / Jira** — rich HTML paste
 - **Gmail** — email-friendly HTML
 - **Slack** — Slack-compatible formatting
+- **Notion** — Markdown that Notion turns into blocks on paste
 - **CLI** — compact plain text
+- **Markdown** — shown when you copied rich text (Google Docs, Confluence, Gmail, a web page): turns it into clean Markdown
 - **AI Rephrase** — rewrite with Claude (fix grammar, summarize, translate, etc.)
 
 ### Keyboard Shortcuts

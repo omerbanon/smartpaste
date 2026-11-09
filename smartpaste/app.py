@@ -17,9 +17,9 @@ from AppKit import NSApplication, NSImage, NSTimer
 from Foundation import NSObject
 from PyObjCTools.AppHelper import callAfter
 
-from smartpaste.clipboard import read_clipboard_string, read_clipboard_types, write_clipboard
+from smartpaste.clipboard import read_clipboard_html, read_clipboard_string, read_clipboard_types, write_clipboard
 from smartpaste.config import is_configured, load_config, migrate_api_key_to_keychain, save_config
-from smartpaste.constants import IMAGE_PASTEBOARD_TYPES, ContentType, TargetFormat
+from smartpaste.constants import IMAGE_PASTEBOARD_TYPES, ContentType, TargetFormat, format_options
 from smartpaste.converters import convert
 from smartpaste.detector import detect
 from smartpaste.history import ClipboardHistory, ClipboardWatcher
@@ -160,15 +160,23 @@ class SmartPasteApp(rumps.App):
             self._toast.show("No text on clipboard", icon=TOAST_ICON_WARNING)
             return
 
-        self._show_popup_for(text)
+        self._show_popup_for(text, html=read_clipboard_html())
 
-    def _show_popup_for(self, text: str) -> None:
-        """Show the format popup for *text* (a fresh copy or a history pick)."""
+    def _show_popup_for(self, text: str, html: str | None = None) -> None:
+        """Show the format popup for *text* (a fresh copy or a history pick).
+
+        *html* is the clipboard's rich-text version, if any; it enables the
+        Markdown target.
+        """
+        from smartpaste.converters.html_to_md import has_rich_html
+
         content_type = detect(text)
-        log.info("Detected content type: %s", content_type)
+        rich = has_rich_html(html)
+        log.info("Detected content type: %s (rich text: %s)", content_type, rich)
         self._popup.show(
             content_type,
-            on_select=lambda fmt: self._on_format_selected(text, content_type, fmt),
+            formats=format_options(content_type, rich),
+            on_select=lambda fmt: self._on_format_selected(text, content_type, fmt, html),
             on_ai_select=lambda prompt: self._on_ai_rephrase(text, prompt),
             char_count=len(text),
             clipboard_text=text,
@@ -193,12 +201,19 @@ class SmartPasteApp(rumps.App):
         write_clipboard(plain=text)
         self._show_popup_for(text)
 
-    def _on_format_selected(self, text: str, content_type: ContentType, target_format: TargetFormat) -> None:
+    def _on_format_selected(
+        self, text: str, content_type: ContentType, target_format: TargetFormat, html: str | None = None
+    ) -> None:
         """Called when user picks a format in the popup."""
         log.info("Converting %s → %s", content_type, target_format)
 
-        result = convert(content_type, target_format, text)
-        write_clipboard(html=result.get("html"), plain=result.get("plain"))
+        if target_format == TargetFormat.MARKDOWN and html:
+            from smartpaste.converters.html_to_md import html_to_markdown
+
+            write_clipboard(plain=html_to_markdown(html))
+        else:
+            result = convert(content_type, target_format, text)
+            write_clipboard(html=result.get("html"), plain=result.get("plain"))
         log.info("Clipboard updated. Ready to paste.")
 
         if load_config().get("auto_paste"):

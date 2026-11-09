@@ -71,6 +71,10 @@ OPTIONS = {
             "markdown",
             "pymdownx",
             "pygments",
+            "markdownify",
+            "bs4",
+            "soupsieve",
+            "six",
             "rumps",
         ]
         if importlib.util.find_spec(pkg) is not None

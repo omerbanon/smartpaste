@@ -18,6 +18,7 @@ class TargetFormat(Enum):
     GMAIL = "Gmail"
     SLACK = "Slack"
     NOTION = "Notion"
+    MARKDOWN = "Markdown"  # offered only when the clipboard holds rich text (HTML)
     CLI = "CLI (Compact)"
     PLAIN = "Plain Text"
     AI_REPHRASE = "Reformat with AI"
@@ -73,6 +74,17 @@ FORMAT_OPTIONS: dict[ContentType, list[TargetFormat]] = {
         TargetFormat.AI_REPHRASE,
     ],
 }
+
+
+
+def format_options(content_type: ContentType, has_rich_html: bool = False) -> list[TargetFormat]:
+    """Targets for the popup. Rich text on the clipboard adds "Markdown" before AI."""
+    formats = list(FORMAT_OPTIONS.get(content_type, [TargetFormat.PLAIN]))
+    if has_rich_html and TargetFormat.MARKDOWN not in formats:
+        at = formats.index(TargetFormat.AI_REPHRASE) if TargetFormat.AI_REPHRASE in formats else len(formats)
+        formats.insert(at, TargetFormat.MARKDOWN)
+    return formats
+
 
 # AI rephrase preset prompts (kept as default reference)
 DEFAULT_AI_PRESETS: list[str] = DEFAULT_PRESETS

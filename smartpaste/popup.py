@@ -160,6 +160,7 @@ FORMAT_ICONS: dict[TargetFormat, str] = {
     TargetFormat.GMAIL: "\U0001F4E8",          # incoming envelope (colorful)
     TargetFormat.SLACK: "\U0001F4AC",          # speech bubble
     TargetFormat.NOTION: "\U0001F5D2",         # spiral notepad
+    TargetFormat.MARKDOWN: "\U0001F4C4",       # page facing up
     TargetFormat.CLI: "\U0001F4BB",             # laptop (terminal)
     TargetFormat.PLAIN: "\U0001F4CB",          # clipboard
     TargetFormat.AI_REPHRASE: "\U0001F9E0",   # brain
@@ -446,15 +447,19 @@ class FormatPopup:
         char_count: int = 0,
         clipboard_text: str = "",
         on_history: Callable[[], None] | None = None,
+        formats: list[TargetFormat] | None = None,
     ) -> None:
-        """Display the popup with format options for the given content type."""
+        """Display the popup with format options for the given content type.
+
+        *formats* overrides the default list for the content type.
+        """
         _init_colors()
 
         # Dismiss any existing popup first
         if self._panel:
             self.dismiss()
 
-        self._formats = FORMAT_OPTIONS.get(content_type, [TargetFormat.PLAIN])
+        self._formats = formats or FORMAT_OPTIONS.get(content_type, [TargetFormat.PLAIN])
         self._callback = on_select
         self._ai_callback = on_ai_select
         self._history_callback = on_history
