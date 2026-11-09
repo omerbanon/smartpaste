@@ -97,6 +97,11 @@ def save_config(config: dict) -> None:
     log.info("Config saved to %s", CONFIG_FILE)
 
 
+def get_api_key() -> str:
+    """The saved Anthropic API key, or "" if none."""
+    return str(load_config().get("api_key") or "").strip()
+
+
 def is_configured() -> bool:
     """Return True if config file exists and has a non-empty API key."""
     if not CONFIG_FILE.exists():

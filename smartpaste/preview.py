@@ -9,6 +9,8 @@ import json
 import logging
 import re
 
+import objc
+
 import markdown as md
 from AppKit import (
     NSAnimationContext,
@@ -31,6 +33,7 @@ from AppKit import (
     NSVisualEffectView,
     NSWindowStyleMaskBorderless,
 )
+from Foundation import NSObject
 from WebKit import WKWebView, WKWebViewConfiguration
 
 from smartpaste.clipboard import write_clipboard
@@ -141,6 +144,10 @@ hr {
 img { max-width: 100%; border-radius: 6px; }
 ::selection { background: rgba(100, 160, 255, 0.35); color: inherit; }
 body { -webkit-user-select: text; cursor: text; }
+.sp-note {
+    margin: 0 0 14px; padding: 8px 12px; border-radius: 6px;
+    background: rgba(255, 170, 60, 0.15); color: #ffcc80; font-size: 12.5px;
+}
 """
 
 
@@ -417,6 +424,31 @@ class _CopyButton(NSView):
         )
 
 
+_BODY_RE = re.compile(r"<body>(.*)</body>", re.S)
+
+
+def _with_note(html: str, note: str | None) -> str:
+    """Insert a warning banner at the top of the rendered page's body."""
+    if not note:
+        return html
+    banner = f'<div class="sp-note">{html_mod.escape(note)}</div>'
+    return html.replace("<body>", "<body>" + banner, 1)
+
+
+class _NavDelegate(NSObject):
+    """Tells the panel when the web view finished its initial load."""
+
+    def initWithCallback_(self, callback):
+        self = objc.super(_NavDelegate, self).init()
+        if self is None:
+            return None
+        self._callback = callback
+        return self
+
+    def webView_didFinishNavigation_(self, webview, navigation):
+        self._callback()
+
+
 class PreviewPanel:
     """Renders clipboard content as formatted rich text in a dark panel."""
 
@@ -425,17 +457,26 @@ class PreviewPanel:
         self._monitor = None
         self._text: str = ""
         self._copy_btn: _CopyButton | None = None
+        self._webview: WKWebView | None = None
+        self._nav_delegate: _NavDelegate | None = None
+        self._loaded = False
+        self._pending_html: str | None = None
 
     @property
     def is_visible(self) -> bool:
         return self._panel is not None
 
-    def show(self, text: str) -> None:
-        """Show the preview panel with rendered markdown content."""
+    def show(self, text: str, note: str | None = None) -> None:
+        """Show the preview panel with rendered markdown content.
+
+        *note* is an optional warning shown above the content.
+        """
         if self._panel:
             self.dismiss()
 
         self._text = text
+        self._loaded = False
+        self._pending_html = None
 
         screen = NSScreen.mainScreen()
         sf = screen.frame()
@@ -533,9 +574,12 @@ class PreviewPanel:
         # Make webview background transparent so blur shows through
         webview.setValue_forKey_(False, "drawsBackground")
 
-        html = _render_to_html(text)
+        self._nav_delegate = _NavDelegate.alloc().initWithCallback_(self._on_loaded)
+        webview.setNavigationDelegate_(self._nav_delegate)
+        html = _with_note(_render_to_html(text), note)
         webview.loadHTMLString_baseURL_(html, None)
         blur.addSubview_(webview)
+        self._webview = webview
 
         # Key monitor (Esc/P to close, C to copy)
         self._monitor = NSEvent.addLocalMonitorForEventsMatchingMask_handler_(
@@ -556,8 +600,40 @@ class PreviewPanel:
 
         log.debug("Preview panel shown")
 
+    def update(self, text: str, note: str | None = None) -> None:
+        """Replace the shown content in place (used while AI output streams in).
+
+        Keeps the panel and scrolls to the bottom so new text stays visible.
+        """
+        if self._panel is None or self._webview is None:
+            return
+        self._text = text
+        html = _with_note(_render_to_html(text), note)
+        match = _BODY_RE.search(html)
+        body = match.group(1) if match else html_mod.escape(text)
+        if not self._loaded:
+            self._pending_html = body  # applied once the first load finishes
+            return
+        self._apply_body(body)
+
+    def _apply_body(self, body: str) -> None:
+        script = (
+            f"document.body.innerHTML = {json.dumps(body)};"
+            "window.scrollTo(0, document.body.scrollHeight);"
+        )
+        self._webview.evaluateJavaScript_completionHandler_(script, None)
+
+    def _on_loaded(self) -> None:
+        self._loaded = True
+        if self._pending_html is not None and self._webview is not None:
+            body, self._pending_html = self._pending_html, None
+            self._apply_body(body)
+
     def dismiss(self) -> None:
         """Close the preview panel."""
+        self._webview = None
+        self._nav_delegate = None
+        self._pending_html = None
         if self._monitor:
             NSEvent.removeMonitor_(self._monitor)
             self._monitor = None

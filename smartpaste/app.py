@@ -68,6 +68,7 @@ class SmartPasteApp(rumps.App):
         self._watcher = ClipboardWatcher(self._history)
         self._history_panel = HistoryPanel()
         self._ai_generation = 0  # cancellation counter for in-flight AI requests
+        self._ai_streaming = False  # True once streamed text is showing in the preview
         self._onboarding: OnboardingWindow | None = None
 
         # Menu items
@@ -143,18 +144,25 @@ class SmartPasteApp(rumps.App):
             self._toast.show("API key not set — open Settings", icon=TOAST_ICON_WARNING)
             return
 
-        # Show loading state in popup
+        # Show loading state in popup until the first text arrives
         self._popup.show_loading()
 
         # Increment generation counter (used for cancellation)
         self._ai_generation += 1
         generation = self._ai_generation
+        self._ai_streaming = False
 
         def _worker():
             try:
                 from smartpaste.ai_rephrase import rephrase
-                result = rephrase(prompt, text)
-                callAfter(self._on_ai_complete, generation, result, None)
+                result = rephrase(
+                    prompt,
+                    text,
+                    on_text=lambda partial: callAfter(self._on_ai_partial, generation, partial),
+                    should_stop=lambda: generation != self._ai_generation,
+                )
+                if result is not None:
+                    callAfter(self._on_ai_complete, generation, result, None)
             except Exception as exc:
                 log.exception("AI rephrase failed")
                 callAfter(self._on_ai_complete, generation, None, exc)
@@ -162,30 +170,69 @@ class SmartPasteApp(rumps.App):
         thread = threading.Thread(target=_worker, daemon=True)
         thread.start()
 
-    def _on_ai_complete(self, generation: int, result: str | None, error: Exception | None) -> None:
+    def _cancel_ai(self) -> None:
+        """Make the in-flight request stale; the worker stops at its next chunk."""
+        self._ai_generation += 1
+        self._ai_streaming = False
+
+    def _on_ai_partial(self, generation: int, partial: str) -> None:
+        """Main thread: show streamed text as it arrives."""
+        if generation != self._ai_generation:
+            return
+        if not self._ai_streaming:
+            # Esc pressed while waiting for the first chunk
+            if self._popup._panel is None:
+                log.info("AI stream cancelled — popup was dismissed")
+                self._cancel_ai()
+                return
+            self._popup.dismiss()
+            NSApplication.sharedApplication().activateIgnoringOtherApps_(True)
+            self._popup._preview.show(partial)
+            self._ai_streaming = True
+            return
+        if not self._popup._preview.is_visible:
+            log.info("AI stream cancelled — preview was closed")
+            self._cancel_ai()
+            return
+        self._popup._preview.update(partial)
+
+    def _on_ai_complete(self, generation: int, result, error: Exception | None) -> None:
         """Handle AI rephrase completion on the main thread."""
         # Ignore stale results (user pressed Esc during loading, or new request started)
         if generation != self._ai_generation:
             log.info("AI result discarded (generation %d, current %d)", generation, self._ai_generation)
             return
 
-        # If popup was already dismissed (user pressed Esc), discard result
-        if self._popup._panel is None:
-            log.info("AI result discarded — popup was dismissed")
-            return
-
-        self._popup.dismiss()
+        streaming, self._ai_streaming = self._ai_streaming, False
+        preview = self._popup._preview
 
         if error:
+            if not streaming:
+                if self._popup._panel is None:
+                    return  # dismissed while loading
+                self._popup.dismiss()
             msg = str(error)
             if len(msg) > 60:
                 msg = msg[:57] + "..."
             self._toast.show(f"AI error: {msg}", icon=TOAST_ICON_WARNING, duration=3.0)
             return
 
-        # Show result in the preview panel — need to re-activate since dismiss() hid the app
+        note = None
+        if result.truncated:
+            note = "The response hit the length limit and is cut off. Try a shorter text or split it."
+
+        if streaming:
+            if preview.is_visible:
+                preview.update(result.text, note=note)
+            return
+
+        # No partial text was shown (very short reply): show the result now
+        if self._popup._panel is None:
+            log.info("AI result discarded — popup was dismissed")
+            return
+        self._popup.dismiss()
         NSApplication.sharedApplication().activateIgnoringOtherApps_(True)
-        self._popup._preview.show(result)
+        preview.show(result.text, note=note)
 
 
 def main():
