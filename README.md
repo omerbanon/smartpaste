@@ -64,7 +64,7 @@ All settings are stored in `~/.smartpaste/config.json`. Edit directly or use **S
 ```json
 {
   "api_key": "sk-ant-api03-...",
-  "model": "claude-haiku-4-5-20251001",
+  "model": "claude-haiku-5-5",
   "system_prompt": "You are a text reformatting assistant...",
   "presets": [
     "Fix grammar and spelling",
@@ -86,8 +86,12 @@ never contain clipboard text or AI prompts.
 
 | Model | Description |
 |-------|-------------|
-| `claude-haiku-4-5-20251001` | Fast, cheap (default) |
-| `claude-sonnet-4-5-20250929` | Balanced |
+| `claude-haiku-5-5` | Fast, cheap (default) |
+| `claude-sonnet-5-5` | Balanced |
+| `claude-opus-5-5` | Most capable, slower |
+
+Settings also lists any other model your API key can use (from the Models API). A saved model
+that is no longer in the list keeps working.
 
 ## Quit / Restart
 

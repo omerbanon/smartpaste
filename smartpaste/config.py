@@ -31,12 +31,42 @@ DEFAULT_PRESETS: list[str] = [
     "Format as a Slack message",
 ]
 
-DEFAULT_MODEL = "claude-haiku-4-5-20251001"
+DEFAULT_MODEL = "claude-haiku-5-5"
 
+# Shown when the Models API can't be reached. Settings also merges in the live
+# list from client.models.list(), so this only needs to be a sensible fallback.
 AVAILABLE_MODELS: dict[str, str] = {
-    "claude-haiku-4-5-20251001": "Haiku 4.5 (fast, cheap)",
-    "claude-sonnet-4-5-20250929": "Sonnet 4.5 (balanced)",
+    "claude-haiku-5-5": "Haiku 5.5 (fast, cheap)",
+    "claude-sonnet-5-5": "Sonnet 5.5 (balanced)",
+    "claude-opus-5-5": "Opus 5.5 (most capable, slower)",
 }
+
+
+def model_choices(current: str | None, fetched: dict[str, str] | None = None) -> list[tuple[str, str]]:
+    """(model_id, label) pairs for the Settings model picker.
+
+    Known models first, then any extra ones from the Models API, then the saved
+    model if it's in neither list, so an older choice keeps working instead of
+    being silently reset.
+    """
+    choices = dict(AVAILABLE_MODELS)
+    for model_id, name in (fetched or {}).items():
+        choices.setdefault(model_id, name)
+    if current and current not in choices:
+        choices[current] = f"{current} (saved)"
+    return list(choices.items())
+
+
+def fetch_models(api_key: str, timeout: float = 10.0) -> dict[str, str]:
+    """Return {model_id: display_name} from the Anthropic Models API ({} on any failure)."""
+    try:
+        import anthropic
+
+        client = anthropic.Anthropic(api_key=api_key, timeout=timeout)
+        return {m.id: m.display_name for m in client.models.list(limit=100)}
+    except Exception as exc:  # network, auth, old SDK: fall back to the static list
+        log.warning("Could not list models: %s", exc)
+        return {}
 
 _DEFAULTS: dict = {
     "api_key": "",

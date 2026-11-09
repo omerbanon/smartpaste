@@ -44,10 +44,12 @@ from Foundation import NSObject
 from PyObjCTools.AppHelper import callAfter
 
 from smartpaste.config import (
-    AVAILABLE_MODELS,
+    DEFAULT_MODEL,
     DEFAULT_PRESETS,
     DEFAULT_SYSTEM_PROMPT,
+    fetch_models,
     load_config,
+    model_choices,
     save_config,
 )
 
@@ -186,6 +188,7 @@ class OnboardingWindow:
         self._window.contentView().addSubview_(container)
         self._container = container
         self._targets = []
+        self._model_popup = None
 
         if self._current_step == 0:
             self._build_step1(container)
@@ -288,7 +291,7 @@ class OnboardingWindow:
                 import anthropic
                 client = anthropic.Anthropic(api_key=key, timeout=10.0)
                 client.messages.create(
-                    model="claude-haiku-4-5-20251001",
+                    model=DEFAULT_MODEL,
                     max_tokens=1,
                     messages=[{"role": "user", "content": "hi"}],
                 )
@@ -442,19 +445,42 @@ class OnboardingWindow:
         popup = NSPopUpButton.alloc().initWithFrame_pullsDown_(
             NSMakeRect(PAD + 65, y - 4, WIN_W - PAD * 2 - 65, 26), False
         )
-        current_model = self._config.get("model", "claude-haiku-4-5-20251001")
-        select_idx = 0
-        for i, (model_id, display_name) in enumerate(AVAILABLE_MODELS.items()):
-            popup.addItemWithTitle_(f"{display_name}")
-            popup.lastItem().setRepresentedObject_(model_id)
-            if model_id == current_model:
-                select_idx = i
-        popup.selectItemAtIndex_(select_idx)
         container.addSubview_(popup)
         self._model_popup = popup
+        self._fill_model_popup(self._config.get("model") or DEFAULT_MODEL)
+
+        # Refresh the list from the Models API in the background
+        key = (self._config.get("api_key") or "").strip()
+        if key:
+            def _worker():
+                fetched = fetch_models(key)
+                if fetched:
+                    callAfter(self._on_models_fetched, fetched)
+            threading.Thread(target=_worker, daemon=True).start()
 
         self._add_step_indicator(container, 2)
         self._add_nav_buttons(container, show_back=True, next_label="Done")
+
+    def _fill_model_popup(self, selected_id: str, fetched: dict[str, str] | None = None) -> None:
+        popup = self._model_popup
+        if popup is None:
+            return
+        popup.removeAllItems()
+        select_idx = 0
+        for i, (model_id, label) in enumerate(model_choices(selected_id, fetched)):
+            popup.addItemWithTitle_(label)
+            popup.lastItem().setRepresentedObject_(model_id)
+            if model_id == selected_id:
+                select_idx = i
+        popup.selectItemAtIndex_(select_idx)
+
+    def _on_models_fetched(self, fetched: dict[str, str]) -> None:
+        """Main thread: merge the live model list, keeping the current selection."""
+        if self._model_popup is None or self._current_step != 2:
+            return
+        selected = self._model_popup.selectedItem()
+        current = str(selected.representedObject()) if selected else (self._config.get("model") or DEFAULT_MODEL)
+        self._fill_model_popup(current, fetched)
 
     # ------------------------------------------------------------------
     # Navigation

@@ -12,7 +12,7 @@ import logging
 
 import anthropic
 
-from smartpaste.config import load_config
+from smartpaste.config import DEFAULT_MODEL, load_config
 
 log = logging.getLogger(__name__)
 
@@ -49,7 +49,7 @@ def rephrase(prompt: str, text: str) -> str:
     if not key:
         raise ValueError("API key not configured — open Settings to add one")
 
-    model = config.get("model", "claude-haiku-4-5-20251001")
+    model = config.get("model") or DEFAULT_MODEL
     system_prompt = config.get("system_prompt", "")
 
     client = anthropic.Anthropic(api_key=key, timeout=_TIMEOUT)
