@@ -40,3 +40,15 @@ jobs:
         run: |
           test -x dist/SmartPaste.app/Contents/MacOS/SmartPaste
           /usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" dist/SmartPaste.app/Contents/Info.plist
+      - name: Launch the app for a few seconds
+        # A broken bundle exits at once with a traceback and "Launch error".
+        # HOME points to a temp folder so the run touches no real settings.
+        run: |
+          export HOME=$RUNNER_TEMP/home && mkdir -p "$HOME"
+          dist/SmartPaste.app/Contents/MacOS/SmartPaste > launch.log 2>&1 &
+          PID=$!
+          sleep 8
+          cat launch.log
+          kill -0 $PID || { echo "SmartPaste exited early"; exit 1; }
+          kill $PID
+          ! grep -E "Traceback|Launch error" launch.log

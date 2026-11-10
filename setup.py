@@ -110,9 +110,15 @@ OPTIONS = {
 
 
 def _py2app_cmdclass() -> dict:
-    """py2app refuses to run when install_requires is set, and setuptools fills it
-    from [project.dependencies] in pyproject.toml. The app bundles whatever is
-    installed in the venv, so drop the list before py2app checks it."""
+    """Undo two things setuptools now fills from pyproject.toml, for py2app only:
+
+    - install_requires (from [project.dependencies]): py2app refuses to run
+      when it's set. The app bundles whatever is installed in the venv.
+    - packages (from [tool.setuptools]): py2app would also put smartpaste into
+      python312.zip, which is first on sys.path, so the app imports the zipped
+      copy and can't open smartpaste/icon.png ("Launch error"). OPTIONS
+      ["packages"] already copies smartpaste as a real folder.
+    """
     try:
         from py2app.build_app import py2app as _py2app
     except ImportError:  # plain `pip install .` without py2app
@@ -121,6 +127,8 @@ def _py2app_cmdclass() -> dict:
     class py2app(_py2app):
         def finalize_options(self):
             self.distribution.install_requires = []
+            self.distribution.packages = []
+            self.distribution.package_data = {}
             super().finalize_options()
 
     return {"py2app": py2app}
