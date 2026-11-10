@@ -6,6 +6,13 @@ macOS menu bar app that converts clipboard content between formats and rephrases
 
 ## Install
 
+**Prebuilt:** download the latest `SmartPaste-<version>.zip` from
+[Releases](https://github.com/omerbanon/smartpaste/releases), unzip it, and move `SmartPaste.app` to
+`/Applications`. If the release says it's unsigned, right-click the app and choose **Open** the
+first time.
+
+**From source:**
+
 ```bash
 # Clone and set up
 git clone https://github.com/omerbanon/smartpaste.git
@@ -151,7 +158,10 @@ ruff check .
 ```
 
 The version lives in one place, `smartpaste/__init__.py` (`__version__`). `setup.py` and
-`pyproject.toml` both read it. Bump it there, then tag the release (`git tag v0.3.0`).
+`pyproject.toml` both read it. Bump it there, then tag the release (`git tag v0.3.0 && git push origin v0.3.0`): the Release workflow
+builds the app and attaches a zip to a GitHub Release. It signs and notarizes the app when the
+`MACOS_CERT_P12`, `MACOS_CERT_PASSWORD`, `APPLE_ID`, `APPLE_APP_PASSWORD` and `APPLE_TEAM_ID`
+repository secrets are set (see `.github/workflows/release.yml`).
 
 ## Requirements
 
