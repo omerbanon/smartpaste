@@ -1,0 +1,55 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "smartpaste"
+description = "macOS menu bar app that converts clipboard content between formats and rephrases text with AI."
+readme = "README.md"
+requires-python = ">=3.10"
+dynamic = ["version"]
+dependencies = [
+    "rumps>=0.4.0",
+    "pyobjc-framework-Cocoa>=10.0",
+    "pyobjc-framework-Quartz>=10.0",
+    "pyobjc-framework-WebKit>=10.0",
+    "pyobjc-framework-Security>=10.0",
+    "pyobjc-framework-ServiceManagement>=10.0",
+    "quickmachotkey>=0.0.2",
+    "markdown>=3.5",
+    "Pygments>=2.17",
+    "pymdown-extensions>=10.0",
+    "markdownify>=0.13",
+    "anthropic>=0.40.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8",
+    "ruff>=0.6",
+    "py2app>=0.28",
+    "Pillow>=10",
+]
+
+[project.scripts]
+smartpaste = "smartpaste.app:main"
+
+[tool.setuptools]
+packages = ["smartpaste", "smartpaste.converters"]
+
+[tool.setuptools.package-data]
+smartpaste = ["icon.png"]
+
+[tool.setuptools.dynamic]
+version = { attr = "smartpaste.__version__" }
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+
+[tool.ruff.lint]
+# Real-bug rules only: syntax errors, undefined names, unused imports/variables.
+select = ["E9", "F"]

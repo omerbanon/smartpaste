@@ -1,0 +1,93 @@
+name: Release
+
+# Push a tag like v0.3.0 (matching smartpaste/__version__) to build
+# SmartPaste.app and attach SmartPaste-<version>.zip to a GitHub Release.
+#
+# Signing and notarization run only when these repository secrets exist;
+# without them the release is an unsigned zip (users right-click > Open once).
+#   MACOS_CERT_P12        base64 of a "Developer ID Application" .p12
+#   MACOS_CERT_PASSWORD   password of that .p12
+#   APPLE_ID              Apple ID email used for notarization
+#   APPLE_APP_PASSWORD    app-specific password for that Apple ID
+#   APPLE_TEAM_ID         10-character Team ID
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: macos-latest
+    env:
+      HAS_SIGNING: ${{ secrets.MACOS_CERT_P12 != '' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Check tag matches __version__
+        id: version
+        run: |
+          VERSION=$(python -c "import re,pathlib;print(re.search(r'__version__ = \"([^\"]+)\"', pathlib.Path('smartpaste/__init__.py').read_text()).group(1))")
+          test "v$VERSION" = "$GITHUB_REF_NAME" || { echo "Tag $GITHUB_REF_NAME does not match __version__ $VERSION"; exit 1; }
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Build SmartPaste.app
+        run: |
+          pip install -r requirements.txt py2app Pillow
+          python setup.py py2app
+
+      - name: Sign
+        if: env.HAS_SIGNING == 'true'
+        env:
+          MACOS_CERT_P12: ${{ secrets.MACOS_CERT_P12 }}
+          MACOS_CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
+        run: |
+          KEYCHAIN=$RUNNER_TEMP/build.keychain-db
+          KC_PASS=$(uuidgen)
+          echo "$MACOS_CERT_P12" | base64 --decode > $RUNNER_TEMP/cert.p12
+          security create-keychain -p "$KC_PASS" "$KEYCHAIN"
+          security set-keychain-settings -lut 3600 "$KEYCHAIN"
+          security unlock-keychain -p "$KC_PASS" "$KEYCHAIN"
+          security import $RUNNER_TEMP/cert.p12 -P "$MACOS_CERT_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN"
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$KC_PASS" "$KEYCHAIN"
+          security list-keychains -d user -s "$KEYCHAIN"
+          IDENTITY=$(security find-identity -v -p codesigning "$KEYCHAIN" | grep "Developer ID Application" | head -1 | awk -F'"' '{print $2}')
+          APP=dist/SmartPaste.app
+          # Sign nested binaries first, then the bundle
+          find "$APP/Contents" -type f \( -name "*.so" -o -name "*.dylib" \) -print0 \
+            | xargs -0 codesign --force --timestamp --options runtime --sign "$IDENTITY"
+          find "$APP/Contents/Frameworks" -maxdepth 1 -name "*.framework" -print0 2>/dev/null \
+            | xargs -0 -r codesign --force --timestamp --options runtime --sign "$IDENTITY"
+          codesign --force --timestamp --options runtime --entitlements entitlements.plist --sign "$IDENTITY" "$APP"
+          codesign --verify --deep --strict --verbose=2 "$APP"
+
+      - name: Notarize
+        if: env.HAS_SIGNING == 'true'
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          ditto -c -k --keepParent dist/SmartPaste.app $RUNNER_TEMP/notarize.zip
+          xcrun notarytool submit $RUNNER_TEMP/notarize.zip --apple-id "$APPLE_ID" \
+            --password "$APPLE_APP_PASSWORD" --team-id "$APPLE_TEAM_ID" --wait
+          xcrun stapler staple dist/SmartPaste.app
+
+      - name: Zip
+        run: ditto -c -k --keepParent dist/SmartPaste.app "SmartPaste-${{ steps.version.outputs.version }}.zip"
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          NOTE="Download SmartPaste-${{ steps.version.outputs.version }}.zip, unzip, and move SmartPaste.app to /Applications."
+          if [ "$HAS_SIGNING" != "true" ]; then
+            NOTE="$NOTE This build is not signed: the first time, right-click the app and choose Open."
+          fi
+          gh release create "$GITHUB_REF_NAME" "SmartPaste-${{ steps.version.outputs.version }}.zip" \
+            --title "SmartPaste ${{ steps.version.outputs.version }}" --notes "$NOTE" --generate-notes

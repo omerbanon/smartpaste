@@ -11,13 +11,14 @@ class ContentType(Enum):
     TABLE = auto()
     TERMINAL = auto()
     PLAIN_TEXT = auto()
-    IMAGE = auto()
 
 
 class TargetFormat(Enum):
     GOOGLE_DOCS = "G-Doc / Confluence / Jira"
     GMAIL = "Gmail"
     SLACK = "Slack"
+    NOTION = "Notion"
+    MARKDOWN = "Markdown"  # offered only when the clipboard holds rich text (HTML)
     CLI = "CLI (Compact)"
     PLAIN = "Plain Text"
     AI_REPHRASE = "Reformat with AI"
@@ -29,6 +30,7 @@ PASTEBOARD_TYPE_PLAIN = "public.utf8-plain-text"
 PASTEBOARD_TYPE_RTF = "public.rtf"
 PASTEBOARD_TYPE_PNG = "public.png"
 PASTEBOARD_TYPE_TIFF = "public.tiff"
+IMAGE_PASTEBOARD_TYPES = (PASTEBOARD_TYPE_PNG, PASTEBOARD_TYPE_TIFF)
 
 # Maps ContentType → list of TargetFormats shown in the popup
 FORMAT_OPTIONS: dict[ContentType, list[TargetFormat]] = {
@@ -36,6 +38,7 @@ FORMAT_OPTIONS: dict[ContentType, list[TargetFormat]] = {
         TargetFormat.GOOGLE_DOCS,
         TargetFormat.GMAIL,
         TargetFormat.SLACK,
+        TargetFormat.NOTION,
         TargetFormat.CLI,
         TargetFormat.PLAIN,
         TargetFormat.AI_REPHRASE,
@@ -72,6 +75,17 @@ FORMAT_OPTIONS: dict[ContentType, list[TargetFormat]] = {
     ],
 }
 
+
+
+def format_options(content_type: ContentType, has_rich_html: bool = False) -> list[TargetFormat]:
+    """Targets for the popup. Rich text on the clipboard adds "Markdown" before AI."""
+    formats = list(FORMAT_OPTIONS.get(content_type, [TargetFormat.PLAIN]))
+    if has_rich_html and TargetFormat.MARKDOWN not in formats:
+        at = formats.index(TargetFormat.AI_REPHRASE) if TargetFormat.AI_REPHRASE in formats else len(formats)
+        formats.insert(at, TargetFormat.MARKDOWN)
+    return formats
+
+
 # AI rephrase preset prompts (kept as default reference)
 DEFAULT_AI_PRESETS: list[str] = DEFAULT_PRESETS
 
@@ -91,5 +105,4 @@ CONTENT_TYPE_LABELS: dict[ContentType, str] = {
     ContentType.TABLE: "Table Detected",
     ContentType.TERMINAL: "Terminal Text Detected",
     ContentType.PLAIN_TEXT: "Plain Text",
-    ContentType.IMAGE: "Image Detected",
 }

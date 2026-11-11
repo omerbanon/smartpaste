@@ -31,12 +31,11 @@ from AppKit import (
     NSTrackingActiveAlways,
     NSTrackingArea,
     NSTrackingMouseEnteredAndExited,
-    NSTrackingMouseMoved,
     NSView,
     NSVisualEffectView,
     NSWindowStyleMaskBorderless,
 )
-from AppKit import NSAppearance, NSCenterTextAlignment, NSTimer
+from AppKit import NSAppearance, NSTimer
 from Foundation import NSObject
 
 from WebKit import WKWebView, WKWebViewConfiguration
@@ -159,6 +158,8 @@ FORMAT_ICONS: dict[TargetFormat, str] = {
     TargetFormat.GOOGLE_DOCS: "\U0001F4DD",   # memo
     TargetFormat.GMAIL: "\U0001F4E8",          # incoming envelope (colorful)
     TargetFormat.SLACK: "\U0001F4AC",          # speech bubble
+    TargetFormat.NOTION: "\U0001F5D2",         # spiral notepad
+    TargetFormat.MARKDOWN: "\U0001F4C4",       # page facing up
     TargetFormat.CLI: "\U0001F4BB",             # laptop (terminal)
     TargetFormat.PLAIN: "\U0001F4CB",          # clipboard
     TargetFormat.AI_REPHRASE: "\U0001F9E0",   # brain
@@ -445,15 +446,19 @@ class FormatPopup:
         char_count: int = 0,
         clipboard_text: str = "",
         on_history: Callable[[], None] | None = None,
+        formats: list[TargetFormat] | None = None,
     ) -> None:
-        """Display the popup with format options for the given content type."""
+        """Display the popup with format options for the given content type.
+
+        *formats* overrides the default list for the content type.
+        """
         _init_colors()
 
         # Dismiss any existing popup first
         if self._panel:
             self.dismiss()
 
-        self._formats = FORMAT_OPTIONS.get(content_type, [TargetFormat.PLAIN])
+        self._formats = formats or FORMAT_OPTIONS.get(content_type, [TargetFormat.PLAIN])
         self._callback = on_select
         self._ai_callback = on_ai_select
         self._history_callback = on_history
@@ -997,7 +1002,7 @@ class FormatPopup:
         if not prompt:
             return
 
-        log.info("AI prompt submitted: %r", prompt)
+        log.info("AI prompt submitted (%d chars)", len(prompt))
         if self._ai_callback:
             self._ai_callback(prompt)
 
@@ -1057,8 +1062,8 @@ class FormatPopup:
             self._on_button_click(self._selected_index)
             return None
 
-        # Number keys 1-6 for quick pick (keycodes 18-23 map to 1-6)
-        number_keycodes = {18: 0, 19: 1, 20: 2, 21: 3, 23: 4, 22: 5}  # 1,2,3,4,5,6
+        # Number keys 1-9 for quick pick (macOS ANSI keycodes for 1..9)
+        number_keycodes = {18: 0, 19: 1, 20: 2, 21: 3, 23: 4, 22: 5, 26: 6, 28: 7, 25: 8}
         if keycode in number_keycodes:
             idx = number_keycodes[keycode]
             if idx < len(self._formats):

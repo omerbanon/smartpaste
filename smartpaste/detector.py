@@ -38,7 +38,7 @@ _MD_PATTERNS: list[re.Pattern[str]] = [
     re.compile(r"^#{1,6}\s+\S", re.MULTILINE),           # headings
     re.compile(r"\*\*[^*]+\*\*"),                          # bold
     re.compile(r"(?<!\*)\*[^*]+\*(?!\*)"),                 # italic (single *)
-    re.compile(r"_[^_]+_"),                                # italic (underscores)
+    re.compile(r"(?<!\w)_[^_\n]+_(?!\w)"),                # italic (underscores, not snake_case)
     re.compile(r"^[-*+]\s+\S", re.MULTILINE),             # unordered list
     re.compile(r"^\d+\.\s+\S", re.MULTILINE),             # ordered list
     re.compile(r"\[.+?\]\(.+?\)"),                         # links
@@ -58,6 +58,7 @@ _CODE_PATTERNS: list[re.Pattern[str]] = [
     re.compile(r"^(function |const |let |var |=>)", re.MULTILINE),        # JS
     re.compile(r"[{}\[\];]"),                               # braces / semicolons
     re.compile(r"^\s{4,}\S", re.MULTILINE),                # 4+ space indentation
+    re.compile(r"\b\w+\([^()\n]*\)"),                     # function call: name(args)
 ]
 
 def _is_json(text: str) -> bool:
@@ -84,8 +85,8 @@ def detect(text: str) -> ContentType:
     - If not markdown, count code patterns. >=3 → CODE.
     - Else → PLAIN_TEXT.
 
-    Image detection is handled separately (by checking pasteboard types),
-    not in this text-based detector.
+    Images aren't classified: SmartPaste only converts text. The hotkey handler
+    tells the user when the clipboard holds an image and no text.
     """
     if not text or not text.strip():
         return ContentType.PLAIN_TEXT

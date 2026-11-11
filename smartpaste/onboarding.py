@@ -44,10 +44,13 @@ from Foundation import NSObject
 from PyObjCTools.AppHelper import callAfter
 
 from smartpaste.config import (
-    AVAILABLE_MODELS,
+    DEFAULT_MODEL,
     DEFAULT_PRESETS,
     DEFAULT_SYSTEM_PROMPT,
+    fetch_models,
+    get_api_key,
     load_config,
+    model_choices,
     save_config,
 )
 
@@ -88,7 +91,7 @@ def _ensure_edit_menu() -> None:
 
 
 WIN_W = 520
-WIN_H = 400
+WIN_H = 436
 PAD = 24
 BTN_W = 90
 BTN_H = 32
@@ -134,6 +137,7 @@ class OnboardingWindow:
         self._preset_checks: list[tuple[NSButton, str]] = []
         self._custom_field: NSTextField | None = None
         self._model_popup: NSPopUpButton | None = None
+        self._login_check: NSButton | None = None
 
     # ------------------------------------------------------------------
     # Public
@@ -166,6 +170,7 @@ class OnboardingWindow:
         self._window = window
         self._current_step = 0
         self._config = load_config()  # refresh
+        self._config["api_key"] = get_api_key()  # Keychain; saved back by save_config()
         self._build_step()
 
         NSApplication.sharedApplication().activateIgnoringOtherApps_(True)
@@ -186,6 +191,8 @@ class OnboardingWindow:
         self._window.contentView().addSubview_(container)
         self._container = container
         self._targets = []
+        self._model_popup = None
+        self._login_check = None
 
         if self._current_step == 0:
             self._build_step1(container)
@@ -288,7 +295,7 @@ class OnboardingWindow:
                 import anthropic
                 client = anthropic.Anthropic(api_key=key, timeout=10.0)
                 client.messages.create(
-                    model="claude-haiku-4-5-20251001",
+                    model=DEFAULT_MODEL,
                     max_tokens=1,
                     messages=[{"role": "user", "content": "hi"}],
                 )
@@ -442,19 +449,58 @@ class OnboardingWindow:
         popup = NSPopUpButton.alloc().initWithFrame_pullsDown_(
             NSMakeRect(PAD + 65, y - 4, WIN_W - PAD * 2 - 65, 26), False
         )
-        current_model = self._config.get("model", "claude-haiku-4-5-20251001")
-        select_idx = 0
-        for i, (model_id, display_name) in enumerate(AVAILABLE_MODELS.items()):
-            popup.addItemWithTitle_(f"{display_name}")
-            popup.lastItem().setRepresentedObject_(model_id)
-            if model_id == current_model:
-                select_idx = i
-        popup.selectItemAtIndex_(select_idx)
         container.addSubview_(popup)
         self._model_popup = popup
+        self._fill_model_popup(self._config.get("model") or DEFAULT_MODEL)
+
+        # Refresh the list from the Models API in the background
+        key = (self._config.get("api_key") or "").strip()
+        if key:
+            def _worker():
+                fetched = fetch_models(key)
+                if fetched:
+                    callAfter(self._on_models_fetched, fetched)
+            threading.Thread(target=_worker, daemon=True).start()
+
+        # Launch at Login (system setting, applied on Done)
+        from smartpaste import login_item
+
+        y -= 34
+        login_cb = NSButton.alloc().initWithFrame_(NSMakeRect(PAD, y, WIN_W - PAD * 2, 20))
+        login_cb.setButtonType_(NSSwitchButton)
+        login_cb.setFont_(NSFont.systemFontOfSize_(12.5))
+        if login_item.is_available():
+            login_cb.setTitle_("Launch SmartPaste at login")
+            login_cb.setState_(NSOnState if login_item.is_enabled() else NSOffState)
+        else:
+            login_cb.setTitle_("Launch at login (available in the installed app)")
+            login_cb.setEnabled_(False)
+        container.addSubview_(login_cb)
+        self._login_check = login_cb
 
         self._add_step_indicator(container, 2)
         self._add_nav_buttons(container, show_back=True, next_label="Done")
+
+    def _fill_model_popup(self, selected_id: str, fetched: dict[str, str] | None = None) -> None:
+        popup = self._model_popup
+        if popup is None:
+            return
+        popup.removeAllItems()
+        select_idx = 0
+        for i, (model_id, label) in enumerate(model_choices(selected_id, fetched)):
+            popup.addItemWithTitle_(label)
+            popup.lastItem().setRepresentedObject_(model_id)
+            if model_id == selected_id:
+                select_idx = i
+        popup.selectItemAtIndex_(select_idx)
+
+    def _on_models_fetched(self, fetched: dict[str, str]) -> None:
+        """Main thread: merge the live model list, keeping the current selection."""
+        if self._model_popup is None or self._current_step != 2:
+            return
+        selected = self._model_popup.selectedItem()
+        current = str(selected.representedObject()) if selected else (self._config.get("model") or DEFAULT_MODEL)
+        self._fill_model_popup(current, fetched)
 
     # ------------------------------------------------------------------
     # Navigation
@@ -469,10 +515,21 @@ class OnboardingWindow:
         else:
             # Done — save config and close
             save_config(self._config)
+            self._apply_login_item()
             self._window.orderOut_(None)
             self._window = None
             if self._on_complete:
                 self._on_complete()
+
+    def _apply_login_item(self) -> None:
+        from smartpaste import login_item
+
+        check = self._login_check
+        if check is None or not login_item.is_available():
+            return
+        wanted = check.state() == NSOnState
+        if wanted != login_item.is_enabled():
+            login_item.set_enabled(wanted)
 
     def _go_back(self) -> None:
         self._save_step_data()
